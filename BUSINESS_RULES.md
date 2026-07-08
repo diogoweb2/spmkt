@@ -19,7 +19,7 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 | **Record** (price entry) | `id, itemId, storeId, price, qty, unit, frozen, bones, skin, ts` | `frozen/bones/skin`: booleans for meat, `null` for non-meat. `ts` is set automatically at save time — **the app never asks for a date**. |
 
 - **Prices are append-only.** Updating a price creates a new record; history is never overwritten. Records can be individually deleted (with confirmation).
-- **Auth**: Google sign-in (Firebase Auth) gates the app and identifies the user's data across devices. The phase-1 PIN is retired (`pinHash` dropped during migration); Settings shows the signed-in email and a Sign out button.
+- **Auth**: one shared family password. The app signs everyone into a single Firebase Auth email/password account (`family@smartprice.app`); the password is stored hashed in Firebase Auth and is changed from the Firebase console. Same account ⇒ one shared household db. Asked once per device (Firebase Auth session persists); Settings offers "Lock app". The phase-1 PIN is retired (`pinHash` dropped during migration).
 
 ## 2. Units & normalization
 

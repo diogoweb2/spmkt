@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
 const app = initializeApp({
@@ -11,6 +11,10 @@ const app = initializeApp({
   appId: '1:135441406704:web:a16e9f5b942c0b87820035',
 })
 
+// Single shared family account: everyone signs in with the same password,
+// which is stored (hashed) in Firebase Auth. Same account = same shared db.
+const FAMILY_EMAIL = 'family@smartprice.app'
+
 export const auth = getAuth(app)
 export const firestore = getFirestore(app)
 
@@ -18,8 +22,8 @@ export function watchAuth(cb) {
   return onAuthStateChanged(auth, cb)
 }
 
-export function signIn() {
-  return signInWithPopup(auth, new GoogleAuthProvider())
+export function signIn(password) {
+  return signInWithEmailAndPassword(auth, FAMILY_EMAIL, password)
 }
 
 export function signOutUser() {

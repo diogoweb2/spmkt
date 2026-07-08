@@ -76,7 +76,7 @@ export default function App() {
       {view.name === 'addPrice' && <AddPrice {...props} />}
       {view.name === 'item' && <ItemDetail {...props} />}
       {view.name === 'items' && <Items {...props} />}
-      {view.name === 'settings' && <Settings {...props} user={user} onSignOut={() => signOutUser()} />}
+      {view.name === 'settings' && <Settings {...props} onSignOut={() => signOutUser()} />}
 
       <nav className="nav">
         <NavBtn ico="🏪" label="Shop" on={['home', 'addPrice'].includes(view.name)} onClick={() => goTab('home')} />

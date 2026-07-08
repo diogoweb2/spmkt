@@ -9,7 +9,7 @@ function replaceDB(update, data) {
   })
 }
 
-export default function Settings({ db, update, user, onSignOut }) {
+export default function Settings({ db, update, onSignOut }) {
   const fileRef = useRef(null)
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [renaming, setRenaming] = useState(null)
@@ -98,9 +98,11 @@ export default function Settings({ db, update, user, onSignOut }) {
       </div>
 
       <div className="card">
-        <h2>Account</h2>
-        <p className="muted small" style={{ marginBottom: 12 }}>Signed in as {user.email}</p>
-        <button className="btn ghost" onClick={onSignOut}>🚪 Sign out</button>
+        <h2>Security</h2>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          Unlocked with the shared family password. Change it in the Firebase console (Authentication).
+        </p>
+        <button className="btn ghost" onClick={onSignOut}>🔒 Lock app (ask password again)</button>
       </div>
 
       <div className="card">
