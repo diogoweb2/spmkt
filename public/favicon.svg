@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#16a34a"/>
+  <text x="230" y="340" font-size="250" text-anchor="middle" font-family="sans-serif">🛒</text>
+  <circle cx="386" cy="136" r="80" fill="#ffffff"/>
+  <text x="386" y="166" font-size="88" font-weight="800" text-anchor="middle" fill="#16a34a" font-family="sans-serif">$</text>
+</svg>
