@@ -121,7 +121,14 @@ function kindOf(unit) {
 
 // Opens the family db doc, preferring the service-account key (writes
 // directly, no password) and falling back to family-password sign-in.
+// Cached so multiple stores share one Firebase app.
+let familyDoc
 async function openFamilyDoc(env) {
+  familyDoc ??= await connectFamilyDoc(env)
+  return familyDoc
+}
+
+async function connectFamilyDoc(env) {
   const keyPath = join(here, 'service-account.json')
   if (existsSync(keyPath)) {
     const { initializeApp, cert } = await import('firebase-admin/app')
