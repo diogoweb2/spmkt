@@ -1,6 +1,16 @@
-import { normalizedPrice, defaultAnnual } from './units'
+import { normalizedPrice, defaultAnnual, unitKind } from './units'
 
-export function recordNorm(rec) {
+// Supermarkets increasingly price meat by piece ("3 pieces $8") with no weight
+// printed. Such a record is stored honestly as `un` even on a weight item —
+// its price can't be normalized against $/100g, so it is REFERENCE-ONLY:
+// kept in history, excluded from every comparison. `item` may be omitted by
+// callers that already work within one item+kind.
+export function isComparable(item, rec) {
+  return !item || unitKind(rec.unit) === item.kind
+}
+
+export function recordNorm(rec, item) {
+  if (!isComparable(item, rec)) return null
   return normalizedPrice(rec.price, rec.qty, rec.unit)
 }
 
@@ -44,16 +54,19 @@ export function variantRecords(db, itemId, key) {
 // Verdict for a record vs the item's history of the SAME variant.
 // Returns { level: 'first'|'best'|'good'|'ok'|'high', ... }
 export function verdict(db, rec) {
-  const norm = recordNorm(rec)
-  const others = variantRecords(db, rec.itemId, variantKey(rec)).filter((r) => r.id !== rec.id)
+  const item = db.items.find((i) => i.id === rec.itemId)
+  const norm = recordNorm(rec, item)
+  if (norm == null) return null // by-piece price: nothing to compare it against
+  const others = variantRecords(db, rec.itemId, variantKey(rec))
+    .filter((r) => r.id !== rec.id && isComparable(item, r))
   if (others.length === 0) return { level: 'first', norm }
 
-  const norms = others.map(recordNorm).filter((n) => n != null)
+  const norms = others.map((r) => recordNorm(r, item)).filter((n) => n != null)
   const best = Math.min(...norms)
   const sorted = [...norms].sort((a, b) => a - b)
   const median = sorted[Math.floor(sorted.length / 2)]
 
-  const bestRec = others.find((r) => recordNorm(r) === best)
+  const bestRec = others.find((r) => recordNorm(r, item) === best)
   const bestStore = db.stores.find((s) => s.id === bestRec?.storeId)
 
   let level
@@ -67,7 +80,9 @@ export function verdict(db, rec) {
 
 // Cheapest latest price per store for an item (optionally a single variant).
 export function pricesByStore(db, itemId, variant) {
-  const recs = variant == null ? itemRecords(db, itemId) : variantRecords(db, itemId, variant)
+  const item = db.items.find((i) => i.id === itemId)
+  const all = variant == null ? itemRecords(db, itemId) : variantRecords(db, itemId, variant)
+  const recs = all.filter((r) => isComparable(item, r)) // by-piece prices can't be ranked
   const byStore = new Map()
   for (const r of recs) {
     if (!byStore.has(r.storeId)) byStore.set(r.storeId, r) // recs sorted desc -> latest wins
@@ -76,7 +91,7 @@ export function pricesByStore(db, itemId, variant) {
     .map(([storeId, rec]) => ({
       store: db.stores.find((s) => s.id === storeId),
       rec,
-      norm: recordNorm(rec),
+      norm: recordNorm(rec, item),
     }))
     .filter((e) => e.store && e.norm != null)
     .sort((a, b) => a.norm - b.norm)

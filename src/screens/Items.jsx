@@ -73,7 +73,7 @@ export default function Items({ db, update, push }) {
   const compareKind = selectedRows[0]?.item.kind ?? null
 
   function toggleSelect(row) {
-    if (row.recs.length === 0) return
+    if (row.recs.length === 0 || !pricesByStore(db, row.item.id, row.variant).length) return
     setSelected((sel) =>
       sel.includes(row.key) ? sel.filter((k) => k !== row.key) : [...sel, row.key],
     )
@@ -146,10 +146,11 @@ export default function Items({ db, update, push }) {
         {rows.map((row) => {
           const { item, variant, label, recs, key } = row
           const cheapest = pricesByStore(db, item.id, variant)[0]
-          const norms = recs.map(recordNorm).filter((n) => n != null)
+          const norms = recs.map((r) => recordNorm(r, item)).filter((n) => n != null)
           const best = norms.length ? Math.min(...norms) : null
           const isSel = selected.includes(key)
-          const disabled = comparing && (recs.length === 0 || (compareKind && item.kind !== compareKind && !isSel))
+          // By-piece-only products have no normalized price: nothing to compare.
+          const disabled = comparing && (recs.length === 0 || best == null || (compareKind && item.kind !== compareKind && !isSel))
           return (
             <button
               key={key}
@@ -181,9 +182,11 @@ export default function Items({ db, update, push }) {
               </div>
               <div className="right">
                 <div className="title" style={{ fontSize: 15, color: 'var(--accent)' }}>
-                  {best != null ? fmtDisplay(best, item.kind, db.displayWeightUnit) : '—'}
+                  {best != null
+                    ? fmtDisplay(best, item.kind, db.displayWeightUnit)
+                    : recs[0] ? `${fmtMoney(recs[0].price)} / ${fmtQty(recs[0].qty, recs[0].unit)}` : '—'}
                 </div>
-                <div className="sub">best</div>
+                <div className="sub">{best != null ? 'best' : recs.length ? 'by piece' : 'best'}</div>
               </div>
               {!comparing && (
                 <span

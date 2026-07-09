@@ -96,13 +96,19 @@ export default function AddPrice({ db, update, push, pop, view }) {
         ts: Date.now(),
       })
     })
-    push({ name: 'item', itemId, fromSave: true })
+    push({ name: 'item', itemId, fromSave: !byPiece })
   }
 
   if (!store) return null
 
   // Units compatible with an existing item's kind; new items can pick anything.
-  const unitChoices = item ? KIND_UNITS[item.kind] : ALL_UNITS
+  // Meat is sold by the piece too ("3 pieces $8", no weight printed) — allow
+  // `un` on weight meat items; such records are history-only (never compared).
+  const meatItem = (item ?? { category }).category === 'meat'
+  const unitChoices = item
+    ? meatItem && item.kind === 'weight' ? [...KIND_UNITS.weight, 'un'] : KIND_UNITS[item.kind]
+    : ALL_UNITS
+  const byPiece = item && unitKind(unit) !== item.kind
 
   return (
     <div className="screen">
@@ -213,6 +219,12 @@ export default function AddPrice({ db, update, push, pop, view }) {
               </div>
             </label>
           </div>
+
+          {byPiece && (
+            <p className="muted small" style={{ marginTop: -6, marginBottom: 10 }}>
+              ⚠️ No weight given — saved for history, but it can't be compared with $/{db.displayWeightUnit ?? 'lb'} prices.
+            </p>
+          )}
 
           {isMeat && (
             <>

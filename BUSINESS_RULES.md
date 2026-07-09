@@ -37,6 +37,14 @@ Priority order: last unit/qty used for **this item at this store** → last unit
 
 ## 3. Meat variations
 
+### By-piece meat prices (reference-only records)
+Supermarkets increasingly price meat by piece with no weight printed ("boneless skinless chicken breast, 3 piece — $8"), which makes comparison impossible by design.
+
+- Such a price is stored **honestly as `un`** (qty = number of pieces) even on a `weight` item — the app/import never guesses a weight.
+- A record whose unit kind ≠ its item's kind is **reference-only**: kept in history, but excluded from every comparison (verdict, best-ever, latest, where-it's-cheapest, monthly chart, ⚖️ compare). `isComparable(item, rec)` in `src/lib/analysis.js` is the single source of that rule; `recordNorm(rec, item)` returns `null` for them.
+- UI: history shows `$8.00 / 3 units` with the caption "no weight — reference only"; the Items row shows the by-piece price under a "by piece" label; a product with only by-piece prices can't be selected for ⚖️ Compare. Saving one from AddPrice shows a warning and skips the verdict banner.
+- AddPrice offers `un` alongside kg/lb/g/oz for **meat** items (only meat is sold this way).
+
 - Category `meat` adds three toggles when logging: **Fresh/Frozen**, **Bones Y/N**, **Skin Y/N**.
 - The triple **(skin, bones, frozen) is a "variant"** — each variant is treated as a separate product: its own history, verdicts, store comparison, monthly chart, and list row.
 - Variant display label format: `(skin-on|skinless, bone-in|boneless, fresh|frozen)` — shown after the item name in lists, and as tabs on the product page when an item has multiple variants.
@@ -110,6 +118,8 @@ Compared **only against other records of the same item + variant**, using normal
 - Extraction rules: multi-product deals are split into one record per product; meat items get inferred `frozen`/`bones`/`skin` variant flags; per-lb / per-kg / package sizes map to the normal qty+unit model; "2 for $5" → unit price.
 - The extraction prompt is given the db's existing item names and told to reuse the exact name when a flyer product matches, so price history continues instead of near-duplicate items being created. Items are then matched by case-insensitive name, otherwise created (`category` meat/other, `kind` from the unit). The store is matched by name or created.
 - Flyer records carry `source: 'flyer'`, `ts` = import time, and `validUntil` = end of the flyer's last valid day (parsed from the site's "Valid from … to …" text; `null` if not found). Dedupe: at most one flyer record per item+store per 7 days (variant excluded: extraction can vary run to run).
+- **A store whose flyer was already imported within the last 7 days is skipped before downloading** (no image fetch, no Claude call). `--force` re-imports anyway; `--dry-run` extracts without saving.
+- **The import never invents a weight**: by-piece deals become `un` records (see §3).
 - **Packaged/boxed products (frozen meat boxes, tubs, etc.) are recorded by printed package size** (e.g. 750 g, 1.1 kg), not as 1 unit — so a small FreshCo box is comparable with a big Costco box via the normal per-100g math.
 - **UI**: records with a flyer source show a 📰 badge next to the product name (Items list, product page title) and in history rows — green "flyer until \<date\>" while valid, amber "flyer ended \<date\>" after. Expired flyer prices stay in the db as reference.
 - Auth: prefers a Firebase admin service-account key at `scripts/flyers/service-account.json` (writes directly, bypassing security rules); falls back to signing in with `FAMILY_PASSWORD` from `scripts/flyers/.env`. Both files are gitignored.

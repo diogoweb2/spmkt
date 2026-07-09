@@ -6,10 +6,10 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 // Average normalized price per calendar month (across years), to reveal
 // seasonal lows worth buying in bulk.
-function monthlyAverages(recs) {
+function monthlyAverages(recs, item) {
   const buckets = Array.from({ length: 12 }, () => ({ sum: 0, n: 0 }))
   for (const r of recs) {
-    const norm = recordNorm(r)
+    const norm = recordNorm(r, item)
     if (norm == null) continue
     const b = buckets[new Date(r.ts).getMonth()]
     b.sum += norm
@@ -18,9 +18,9 @@ function monthlyAverages(recs) {
   return buckets.map((b) => (b.n ? { avg: b.sum / b.n, n: b.n } : null))
 }
 
-export default function MonthlyChart({ recs, kind, weightUnit }) {
+export default function MonthlyChart({ recs, item, kind, weightUnit }) {
   const [sel, setSel] = useState(null)
-  const months = monthlyAverages(recs)
+  const months = monthlyAverages(recs, item)
   const withData = months.filter(Boolean)
   if (withData.length < 2) return null // one month tells no seasonal story
 

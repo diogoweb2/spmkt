@@ -4,8 +4,12 @@
 // Firestore. The image is deleted after processing.
 //
 // Usage:
-//   node scripts/flyers/run.mjs            # full run (needs .env with password)
+//   node scripts/flyers/run.mjs            # full run
 //   node scripts/flyers/run.mjs --dry-run  # extract only, print what would be saved
+//   node scripts/flyers/run.mjs --force    # re-import stores already done this week
+//
+// A store whose flyer was already imported in the last 7 days is skipped
+// before downloading — no image fetch, no Claude call, no tokens burned.
 //
 // Config: scripts/flyers/stores.json (one entry per supermarket).
 // Secrets: scripts/flyers/.env with FAMILY_PASSWORD=<app password> (gitignored).
@@ -18,6 +22,8 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
+const FORCE = process.argv.includes('--force')
+const WEEK_MS = 7 * 24 * 3600 * 1000
 const UNITS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un'] }
 
 function log(msg) {
@@ -91,7 +97,9 @@ Output ONLY a JSON array (no prose, no markdown fence). Each element:
 Rules:
 - name: clean generic product name with brand if shown (e.g. "Chicken Drumsticks", "Coca-Cola 12-pack"). No sizes/prices in the name.
 - price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un". A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
-- Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. Only use unit "un" when no size is printed. If a multi-product deal shows a different size per product, use each product's own size.
+- The item kinds must stay consistent: weight units (kg/g/lb/oz) only when a weight is printed or the price is per weight.
+- Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. If a multi-product deal shows a different size per product, use each product's own size.
+- NEVER invent or estimate a weight/volume that is not printed on the flyer. If a product is priced by piece or by package with no size printed (e.g. "BONELESS SKINLESS CHICKEN BREAST, 3 piece — ONLY $8", "2 for $5"), use unit "un" with qty = the number of pieces/items (3 and 1 in those examples). This applies to meat too: "3 piece $8" -> price 8, qty 3, unit "un", category "meat". A wrong guessed weight is far worse than an honest per-piece price.
 - Split combined deals: if one price covers multiple distinct products ("pork loin or chicken thighs $3.99/lb"), output one element per product, same price.
 - Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip non-product content (banners, store hours, points promos without a concrete product price).
@@ -171,7 +179,7 @@ async function insertProducts(products, storeName, env, validUntil) {
     db.stores.push(store)
   }
 
-  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000
+  const weekAgo = Date.now() - WEEK_MS
   let added = 0
   for (const p of products) {
     const isMeat = p.category === 'meat'
@@ -180,7 +188,10 @@ async function insertProducts(products, storeName, env, validUntil) {
       item = { id: uid('i'), name: p.name.trim(), category: isMeat ? 'meat' : 'other', kind: kindOf(p.unit), defaultUnit: p.unit, annualQty: null }
       db.items.push(item)
     }
-    if (kindOf(p.unit) !== item.kind) {
+    // Meat sold by the piece ("3 pieces $8") is stored as `un` on a weight item:
+    // history-only, never compared. Any other kind mismatch is an extraction error.
+    const byPiece = isMeat && item.kind === 'weight' && kindOf(p.unit) === 'count'
+    if (kindOf(p.unit) !== item.kind && !byPiece) {
       log(`  skip "${p.name}": unit ${p.unit} incompatible with item kind ${item.kind}`)
       continue
     }
@@ -225,9 +236,22 @@ let failed = false
 for (const store of stores) {
   let img
   try {
+    let existingNames = []
+    if (!DRY_RUN) {
+      const { db } = await openFamilyDoc(env)
+      // Already imported this week? Skip before spending a download + tokens.
+      const s = db?.stores?.find((x) => x.name.toLowerCase() === store.name.toLowerCase())
+      const last = s && db.records
+        .filter((r) => r.source === 'flyer' && r.storeId === s.id)
+        .reduce((max, r) => Math.max(max, r.ts), 0)
+      if (last && Date.now() - last < WEEK_MS && !FORCE) {
+        log(`${store.name}: already imported ${new Date(last).toLocaleString()} — skipping (use --force to re-import)`)
+        continue
+      }
+      existingNames = db?.items?.map((i) => i.name) ?? []
+    }
     const dl = await downloadFirstPage(store, workDir)
     img = dl.file
-    const existingNames = DRY_RUN ? [] : (await openFamilyDoc(env)).db?.items?.map((i) => i.name) ?? []
     const products = extractProducts(img, store.name, existingNames)
     log(`${store.name}: extracted ${products.length} products`)
     if (DRY_RUN) {

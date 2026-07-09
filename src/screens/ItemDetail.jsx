@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
-  variantKey, variantLabel, flyerInfo,
+  variantKey, variantLabel, flyerInfo, isComparable,
 } from '../lib/analysis'
 import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel } from '../lib/units'
 import MonthlyChart from '../components/MonthlyChart'
@@ -22,8 +22,10 @@ export default function ItemDetail({ db, update, pop, view }) {
 
   const recs = allRecs.filter((r) => variantKey(r) === variant)
   const latest = recs[0]
+  // Latest comparable price drives the stats; by-piece records are history only.
+  const latestCmp = recs.find((r) => isComparable(item, r))
   const byStore = pricesByStore(db, item.id, variant)
-  const norms = recs.map(recordNorm).filter((n) => n != null)
+  const norms = recs.map((r) => recordNorm(r, item)).filter((n) => n != null)
   const best = norms.length ? Math.min(...norms) : null
   const worst = norms.length ? Math.max(...norms) : null
 
@@ -32,7 +34,7 @@ export default function ItemDetail({ db, update, pop, view }) {
   const range = annualSliderRange(item.kind)
 
   // Savings: latest price vs best ever (if latest isn't the best)
-  const savings = latest && best != null ? yearlySavings(item, recordNorm(latest), best) : 0
+  const savings = latestCmp && best != null ? yearlySavings(item, recordNorm(latestCmp, item), best) : 0
   // Spread savings: worst store vs best store currently
   const spread =
     byStore.length >= 2 ? yearlySavings(item, byStore[byStore.length - 1].norm, byStore[0].norm) : 0
@@ -95,7 +97,7 @@ export default function ItemDetail({ db, update, pop, view }) {
       {latest && (
         <div className="stat-row">
           <div className="stat">
-            <div className="v">{fmt(recordNorm(latest)).split(' / ')[0]}</div>
+            <div className="v">{latestCmp ? fmt(recordNorm(latestCmp, item)).split(' / ')[0] : '—'}</div>
             <div className="k">Latest</div>
           </div>
           <div className="stat">
@@ -173,7 +175,7 @@ export default function ItemDetail({ db, update, pop, view }) {
         </div>
       )}
 
-      <MonthlyChart recs={recs} kind={item.kind} weightUnit={wu} />
+      <MonthlyChart recs={recs} item={item} kind={item.kind} weightUnit={wu} />
 
       <div className="card">
         <h2>History</h2>
@@ -181,8 +183,8 @@ export default function ItemDetail({ db, update, pop, view }) {
         <div className="list">
           {recs.map((r) => {
             const store = db.stores.find((s) => s.id === r.storeId)
-            const norm = recordNorm(r)
-            const pct = worst && worst > 0 ? norm / worst : 1
+            const norm = recordNorm(r, item)
+            const pct = norm != null && worst && worst > 0 ? norm / worst : 1
             const cls = best != null && norm <= best * 1.02 ? '' : norm >= worst * 0.98 && recs.length > 1 ? 'worst' : 'mid'
             return (
               <div key={r.id} className="row" style={{ cursor: 'default' }}>
@@ -191,11 +193,15 @@ export default function ItemDetail({ db, update, pop, view }) {
                     {store?.name ?? '?'} · {fmtQty(r.qty, r.unit)}
                   </div>
                   <div className="sub">{new Date(r.ts).toLocaleDateString()}{flyerInfo(r) ? ` · ${flyerInfo(r).text}` : ''}</div>
-                  <div className={'hist-bar ' + cls} style={{ width: `${Math.max(6, pct * 100)}%`, marginTop: 6 }} />
+                  {norm != null && (
+                    <div className={'hist-bar ' + cls} style={{ width: `${Math.max(6, pct * 100)}%`, marginTop: 6 }} />
+                  )}
                 </div>
                 <div className="right">
-                  <div className="title" style={{ fontSize: 15 }}>{fmt(norm)}</div>
-                  <div className="sub">{fmtMoney(r.price)} total</div>
+                  <div className="title" style={{ fontSize: 15 }}>
+                    {norm != null ? fmt(norm) : `${fmtMoney(r.price)} / ${fmtQty(r.qty, r.unit)}`}
+                  </div>
+                  <div className="sub">{norm != null ? `${fmtMoney(r.price)} total` : 'no weight — reference only'}</div>
                 </div>
                 <button
                   className="chev"
