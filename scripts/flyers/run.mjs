@@ -59,10 +59,12 @@ async function downloadFirstPage(store, dir) {
   if (!res.ok) throw new Error(`fetch ${store.url}: HTTP ${res.status}`)
   const html = await res.text()
   const validUntil = parseValidUntil(html)
-  // Full-res page images look like /data/promotions/<id>/<slug>_01.jpg — take
-  // the first promotion on the page (the main weekly flyer).
-  const m = html.match(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_01\.jpg[^"' ]*/)
-  if (!m) throw new Error(`no flyer page-1 image found at ${store.url}`)
+  // Page images are /data/promotions/<id>/<slug>_NN.jpg. The suffix is NOT the
+  // display order — Superstore's first page is _07, with _01.._06 being ad
+  // inserts. The site renders pages in document order, so the first image that
+  // appears in the HTML is the flyer's page 1.
+  const m = html.match(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/)
+  if (!m) throw new Error(`no flyer page image found at ${store.url}`)
   const imgRes = await fetch(m[0], { headers: { 'User-Agent': 'Mozilla/5.0', Referer: store.url } })
   if (!imgRes.ok) throw new Error(`image download: HTTP ${imgRes.status}`)
   const file = join(dir, `${store.name.toLowerCase().replace(/\W+/g, '-')}-page1.jpg`)
@@ -102,7 +104,7 @@ Rules:
 - NEVER invent or estimate a weight/volume that is not printed on the flyer. If a product is priced by piece or by package with no size printed (e.g. "BONELESS SKINLESS CHICKEN BREAST, 3 piece — ONLY $8", "2 for $5"), use unit "un" with qty = the number of pieces/items (3 and 1 in those examples). This applies to meat too: "3 piece $8" -> price 8, qty 3, unit "un", category "meat". A wrong guessed weight is far worse than an honest per-piece price.
 - Split combined deals: if one price covers multiple distinct products ("pork loin or chicken thighs $3.99/lb"), output one element per product, same price.
 - Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
-- Skip non-product content (banners, store hours, points promos without a concrete product price).
+- Skip anything that is not a grocery product you'd buy to eat or use in the kitchen/home: store banners, event ads, store hours, loyalty-points promos with no concrete product price, toys, clothing, electronics, kitchenware, pet food, garden. If the page turns out to be a pure advertisement with no priced groceries, return an empty array [].
 - If a price is unreadable, skip that product.${existingNames.length ? `
 - The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation: ${JSON.stringify(existingNames)}` : ''}`
 
@@ -234,7 +236,7 @@ if (!DRY_RUN && !env.FAMILY_PASSWORD && !existsSync(join(here, 'service-account.
 const workDir = mkdtempSync(join(tmpdir(), 'spmkt-flyers-'))
 let failed = false
 for (const store of stores) {
-  let img
+  const imgs = []
   try {
     let existingNames = []
     if (!DRY_RUN) {
@@ -251,8 +253,8 @@ for (const store of stores) {
       existingNames = db?.items?.map((i) => i.name) ?? []
     }
     const dl = await downloadFirstPage(store, workDir)
-    img = dl.file
-    const products = extractProducts(img, store.name, existingNames)
+    imgs.push(dl.file)
+    const products = extractProducts(dl.file, store.name, existingNames)
     log(`${store.name}: extracted ${products.length} products`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
@@ -263,7 +265,7 @@ for (const store of stores) {
     failed = true
     console.error(`[${store.name}] FAILED: ${err.message}`)
   } finally {
-    if (img && existsSync(img)) unlinkSync(img)
+    for (const f of imgs) if (existsSync(f)) unlinkSync(f)
   }
 }
 rmSync(workDir, { recursive: true, force: true })
