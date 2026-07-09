@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { exportJSON, DEFAULT_DB } from '../lib/db'
 import { UNITS } from '../lib/units'
+import { unignore } from '../lib/ignore'
 import Notes from '../components/Notes'
 
 function replaceDB(update, data) {
@@ -85,6 +86,28 @@ export default function Settings({ db, update, onSignOut }) {
           ))}
         </div>
       </div>
+
+      {(db.ignored ?? []).length > 0 && (
+        <div className="card">
+          <h2>Ignored products 🚫</h2>
+          <p className="muted small" style={{ marginBottom: 12 }}>
+            The flyer import skips these kinds of products, whatever the brand.
+          </p>
+          <div className="list">
+            {db.ignored.map((g) => (
+              <div key={g.id} className="row" style={{ cursor: 'default' }}>
+                <div className="grow title" style={{ whiteSpace: 'normal', fontSize: 15 }}>{g.name}</div>
+                <button
+                  className="btn small ghost"
+                  onClick={() => update((d) => unignore(d, g.id))}
+                >
+                  Stop ignoring
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Notes db={db} update={update} />
 

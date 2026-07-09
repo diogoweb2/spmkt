@@ -106,18 +106,27 @@ Rules:
 - Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip anything that is not a grocery product you'd buy to eat or use in the kitchen/home: store banners, event ads, store hours, loyalty-points promos with no concrete product price, toys, clothing, electronics, kitchenware, pet food, garden. If the page turns out to be a pure advertisement with no priced groceries, return an empty array [].
 - If a price is unreadable, skip that product.${existingNames.length ? `
-- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation: ${JSON.stringify(existingNames)}` : ''}`
+- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation: ${JSON.stringify(existingNames)}` : ''}${ignoredNames.length ? `
+- IGNORED PRODUCTS — the user deleted these and never wants to see them again: ${JSON.stringify(ignoredNames)}
+  Each name is an EXAMPLE of a product type, not a string to match on. Work out what the product actually IS — its generic type, dropping the brand, the size and any qualifier — then omit every flyer product of that type, whatever its brand or variety.
+  · "Royale Bathroom Tissue" -> the type is bathroom tissue: omit all bathroom tissue, any brand.
+  · "Robin Hood All Purpose Flour" -> the type is flour: omit all flour (all-purpose, bread, whole wheat, cake, any brand) — but KEEP other Robin Hood products such as oats.
+  · "Farmer's Market Pies" -> the type is pies: omit all pies, any brand or flavour.
+  Do not over-generalize either: a genuinely different product that merely shares a brand, a word or a shelf stays IN (paper towels are not bathroom tissue; a cheesecake is not a pie; pizza pockets are not flour). If in doubt, keep the product.` : ''}`
 
-function extractProducts(imgPath, storeName, existingNames) {
+function extractProducts(imgPath, storeName, existingNames, ignoredNames) {
   const claude = findClaude()
   log(`${storeName}: extracting with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath, existingNames), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
+  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath, existingNames, ignoredNames), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     timeout: 10 * 60 * 1000,
   })
-  const start = out.indexOf('[')
+  // The last array in the output is the answer: Claude sometimes prints a draft,
+  // reconsiders, and prints a corrected array. Elements are flat objects, so the
+  // last '[' is that array's start.
   const end = out.lastIndexOf(']')
+  const start = out.lastIndexOf('[', end)
   if (start < 0 || end < start) throw new Error(`no JSON array in claude output:\n${out.slice(0, 500)}`)
   const products = JSON.parse(out.slice(start, end + 1))
   const allUnits = Object.values(UNITS).flat()
@@ -182,8 +191,15 @@ async function insertProducts(products, storeName, env, validUntil) {
   }
 
   const weekAgo = Date.now() - WEEK_MS
+  // Backstop for the semantic skip in the prompt: never re-create an item the
+  // user deleted & ignored by that exact name.
+  const ignored = new Set((db.ignored ?? []).map((g) => g.name.trim().toLowerCase()))
   let added = 0
   for (const p of products) {
+    if (ignored.has(p.name.trim().toLowerCase())) {
+      log(`  skip "${p.name}": ignored product`)
+      continue
+    }
     const isMeat = p.category === 'meat'
     let item = db.items.find((i) => i.name.trim().toLowerCase() === p.name.trim().toLowerCase())
     if (!item) {
@@ -239,6 +255,7 @@ for (const store of stores) {
   const imgs = []
   try {
     let existingNames = []
+    let ignoredNames = []
     if (!DRY_RUN) {
       const { db } = await openFamilyDoc(env)
       // Already imported this week? Skip before spending a download + tokens.
@@ -251,10 +268,11 @@ for (const store of stores) {
         continue
       }
       existingNames = db?.items?.map((i) => i.name) ?? []
+      ignoredNames = db?.ignored?.map((g) => g.name) ?? []
     }
     const dl = await downloadFirstPage(store, workDir)
     imgs.push(dl.file)
-    const products = extractProducts(dl.file, store.name, existingNames)
+    const products = extractProducts(dl.file, store.name, existingNames, ignoredNames)
     log(`${store.name}: extracted ${products.length} products`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))

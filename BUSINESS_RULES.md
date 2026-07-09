@@ -18,6 +18,7 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 | **Item** | `id, name, category, kind, defaultUnit, annualQty` | `category`: `meat` or `other` (legacy items may have `dairy`/`produce`/`pantry` — still valid). `kind`: `weight` \| `volume` \| `count`, derived from the unit chosen when the item was created. `annualQty`: user-set yearly consumption in base units, `null` = use default. |
 | **Record** (price entry) | `id, itemId, storeId, price, qty, unit, frozen, bones, skin, ts` (+ `source, validUntil` on flyer imports) | `frozen/bones/skin`: booleans for meat, `null` for non-meat. `ts` is set automatically at save time — **the app never asks for a date**. Flyer-imported records (§12) add `source: 'flyer'` and `validUntil`. |
 | **Note** (bug/idea) | `id, type, text, done, ts` | `type`: `bug` \| `idea`. Personal todo list, see §11. |
+| **Ignored** | `id, name, ts` | A product type the user never wants imported, see §9. |
 
 - **Prices are append-only.** Updating a price creates a new record; history is never overwritten. Records can be individually deleted (with confirmation).
 - **Auth**: one shared family password. The app signs everyone into a single Firebase Auth email/password account (`family@smartprice.app`); the password is stored hashed in Firebase Auth and is changed from the Firebase console. Same account ⇒ one shared household db. Asked once per device (Firebase Auth session persists); Settings offers "Lock app". The phase-1 PIN is retired (`pinHash` dropped during migration).
@@ -101,6 +102,12 @@ Compared **only against other records of the same item + variant**, using normal
 - Field merge rules: `name` = user's choice · `category` = `meat` if any is meat, else the first non-`other` · `annualQty` = largest explicit value, `null` if none · `kind` must already match.
 - **Unit normalization**: if the merged records use mixed units of one kind, all comparable records are rewritten to one unit — the first **present** among `lb, kg, g, oz` (weight) / `L, ml` (volume). Price is unchanged, `qty` is converted (rounded to 3 decimals) and becomes the item's `defaultUnit`. By-piece `un` records (§3) keep their unit — the app never invents a weight.
 
+### Delete & ignore (`src/lib/ignore.js`)
+- Same hold-to-select mode: with ≥ 1 product selected, "🚫 Delete & ignore" deletes those items **and all their prices** (confirmation dialog; not undoable) and appends their names to `db.ignored` = `{id, name, ts}`.
+- The stored name is an **example, not a pattern**. The weekly flyer import passes the ignored names to Claude, which identifies each one's **generic product type** (brand, size and qualifiers dropped) and skips every flyer product of that type: ignoring "Royale Bathroom Tissue" skips all bathroom tissue; "Robin Hood All Purpose Flour" skips flour of every brand and variety **but keeps other Robin Hood products**; "Farmer's Market Pies" skips all pies. Genuinely different products sharing a brand, a word or a shelf are kept (paper towels ≠ bathroom tissue, cheesecake ≠ pie).
+- `run.mjs` also drops products whose name matches an ignored name exactly (case-insensitive) as a backstop, so an ignored item is never re-created.
+- Settings lists the ignored products with a "Stop ignoring" button (which does not restore the deleted prices).
+
 ### Adding prices from the Items list ("current store")
 - The app remembers **where the user is** (`db.currentStoreId`): set when a store is tapped on Home, when a store is created, or when picked in the "Where are you?" dialog. It stays until the user changes it (📍 chip on the Items tab → "change").
 - Every item row has a **+** button → logs a new price for that item at the current store (form prefilled from the item's last record).
@@ -127,7 +134,8 @@ Compared **only against other records of the same item + variant**, using normal
 - Flyer records carry `source: 'flyer'`, `ts` = import time, and `validUntil` = end of the flyer's last valid day (parsed from the site's "Valid from … to …" text; `null` if not found). Dedupe: at most one flyer record per item+store per 7 days (variant excluded: extraction can vary run to run).
 - **A store whose flyer was already imported within the last 7 days is skipped before downloading** (no image fetch, no Claude call). `--force` re-imports anyway; `--dry-run` extracts without saving.
 - **The import never invents a weight**: by-piece deals become `un` records (see §3).
-- Only **groceries** are imported. Non-grocery flyer content (toys, clothing, kitchenware, pet food, diapers, points-only promos, event ads) is ignored.
+- Only **groceries** are imported. Non-grocery flyer content (toys, clothing, kitchenware, pet food, diapers, points-only promos, event ads) is ignored. Products the user deleted & ignored (§9) are skipped by product type.
+- Claude occasionally prints a draft array, reconsiders, and prints a corrected one: the extractor parses the **last** JSON array in the output.
 - **Packaged/boxed products (frozen meat boxes, tubs, etc.) are recorded by printed package size** (e.g. 750 g, 1.1 kg), not as 1 unit — so a small FreshCo box is comparable with a big Costco box via the normal per-100g math.
 - **UI**: records with a flyer source show a 📰 badge next to the product name (Items list, product page title) and in history rows — green "flyer until \<date\>" while valid, amber "flyer ended \<date\>" after. Expired flyer prices stay in the db as reference.
 - Auth: prefers a Firebase admin service-account key at `scripts/flyers/service-account.json` (writes directly, bypassing security rules); falls back to signing in with `FAMILY_PASSWORD` from `scripts/flyers/.env`. Both files are gitignored.

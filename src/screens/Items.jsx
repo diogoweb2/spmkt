@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo } from '../lib/analysis'
 import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
-import { mergeItems, suggestName, targetUnit } from '../lib/merge'
+import { canMerge, mergeItems, suggestName, targetUnit } from '../lib/merge'
+import { ignoreItems } from '../lib/ignore'
 import UnitToggle from '../components/UnitToggle'
 
 export default function Items({ db, update, push }) {
@@ -9,10 +10,12 @@ export default function Items({ db, update, push }) {
   const [comparing, setComparing] = useState(false)
   const [selected, setSelected] = useState([]) // keys "itemId|variant"
   const [report, setReport] = useState(false)
-  // Hold a row to enter merge mode; selection is per item (all its variants).
+  // Hold a row to enter selection mode; selection is per item (all its variants).
+  // From there: merge duplicates, or delete & ignore products you don't care about.
   const [merging, setMerging] = useState(false)
   const [mergeSel, setMergeSel] = useState([]) // item ids
-  const [mergeName, setMergeName] = useState(null) // confirm dialog open when a string
+  const [mergeName, setMergeName] = useState(null) // merge dialog open when a string
+  const [confirmIgnore, setConfirmIgnore] = useState(false)
   const press = useRef({ timer: null, long: false })
   // Adding a price needs a store: ask once, then remember (db.currentStoreId)
   const [pendingAdd, setPendingAdd] = useState(null) // {itemId} | {query}
@@ -92,7 +95,6 @@ export default function Items({ db, update, push }) {
   }
 
   const mergeItemsSel = mergeSel.map((id) => db.items.find((i) => i.id === id)).filter(Boolean)
-  const mergeKind = mergeItemsSel[0]?.kind ?? null
   const mergeRecs = db.records.filter((r) => mergeSel.includes(r.itemId))
   const recordCounts = Object.fromEntries(mergeItemsSel.map((i) => [i.id, itemRecords(db, i.id).length]))
 
@@ -121,6 +123,7 @@ export default function Items({ db, update, push }) {
     setMerging(false)
     setMergeSel([])
     setMergeName(null)
+    setConfirmIgnore(false)
   }
 
   function doMerge() {
@@ -128,6 +131,12 @@ export default function Items({ db, update, push }) {
     if (!name) return
     const ids = mergeSel
     update((d) => mergeItems(d, ids, name))
+    exitMerge()
+  }
+
+  function doIgnore() {
+    const ids = mergeSel
+    update((d) => ignoreItems(d, ids))
     exitMerge()
   }
 
@@ -145,7 +154,7 @@ export default function Items({ db, update, push }) {
   return (
     <div className="screen" style={comparing || merging ? { paddingBottom: 170 } : undefined}>
       <div className="topbar">
-        <h1>{comparing ? 'Pick items ⚖️' : merging ? 'Merge products 🔗' : 'Your items 📋'}</h1>
+        <h1>{comparing ? 'Pick items ⚖️' : merging ? 'Selected products' : 'Your items 📋'}</h1>
         {!comparing && !merging && <UnitToggle db={db} update={update} />}
         {!comparing && !merging && allRows.filter((r) => r.recs.length).length >= 2 && (
           <button className="btn small ghost" onClick={() => setComparing(true)}>
@@ -162,7 +171,7 @@ export default function Items({ db, update, push }) {
 
       {merging && (
         <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
-          Tap the duplicates of the same product — only same-type items. Their prices are kept.
+          Tap more products to select them. Merge duplicates, or delete & ignore what you don't care about.
         </p>
       )}
 
@@ -204,8 +213,7 @@ export default function Items({ db, update, push }) {
           const isSel = selected.includes(key) || isMergeSel
           // By-piece-only products have no normalized price: nothing to compare.
           const disabled =
-            (comparing && (recs.length === 0 || best == null || (compareKind && item.kind !== compareKind && !isSel))) ||
-            (merging && mergeKind && item.kind !== mergeKind)
+            comparing && (recs.length === 0 || best == null || (compareKind && item.kind !== compareKind && !isSel))
           return (
             <button
               key={key}
@@ -304,8 +312,8 @@ export default function Items({ db, update, push }) {
       {merging && (
         <div className="compare-tray">
           <div className="small" style={{ marginBottom: 8 }}>
-            {mergeItemsSel.length < 2 ? (
-              <span className="muted">Pick at least 2 products to merge.</span>
+            {mergeItemsSel.length === 0 ? (
+              <span className="muted">Nothing selected yet.</span>
             ) : (
               mergeItemsSel.map((i) => (
                 <span key={i.id} className="badge lvl-first" style={{ marginRight: 6, marginBottom: 4, display: 'inline-block' }}>
@@ -314,15 +322,47 @@ export default function Items({ db, update, push }) {
               ))
             )}
           </div>
+          {mergeItemsSel.length >= 2 && !canMerge(mergeItemsSel) && (
+            <p className="muted small" style={{ marginTop: -4, marginBottom: 8 }}>
+              Can't merge: these aren't the same type (weight with weight).
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn ghost" onClick={exitMerge}>Cancel</button>
             <button
+              className="btn danger"
+              disabled={mergeItemsSel.length === 0}
+              onClick={() => setConfirmIgnore(true)}
+            >
+              🚫 Delete & ignore
+            </button>
+            <button
               className="btn"
-              disabled={mergeItemsSel.length < 2}
+              disabled={!canMerge(mergeItemsSel)}
               onClick={() => setMergeName(suggestName(mergeItemsSel, recordCounts))}
             >
               🔗 Merge {mergeItemsSel.length >= 2 ? `(${mergeItemsSel.length})` : ''}
             </button>
+          </div>
+        </div>
+      )}
+
+      {confirmIgnore && (
+        <div className="modal-backdrop" onClick={() => setConfirmIgnore(false)}>
+          <div className="card" style={{ width: 'min(92vw, 400px)' }} onClick={(e) => e.stopPropagation()}>
+            <h2>Delete & ignore 🚫</h2>
+            <p className="muted small">
+              {mergeItemsSel.map((i) => i.name).join(', ')}
+            </p>
+            <ul className="muted small" style={{ paddingLeft: 18, margin: '4px 0 12px' }}>
+              <li>Deletes {mergeRecs.length} price{mergeRecs.length === 1 ? '' : 's'} — this can't be undone.</li>
+              <li>The weekly flyer import will skip this <b>kind</b> of product from now on, any brand.</li>
+              <li>Undo the ignore later in Settings.</li>
+            </ul>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn ghost" onClick={() => setConfirmIgnore(false)}>Cancel</button>
+              <button className="btn danger" onClick={doIgnore}>Delete & ignore</button>
+            </div>
           </div>
         </div>
       )}
