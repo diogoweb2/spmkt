@@ -26,3 +26,4 @@ firebase-debug.log
 *.sln
 *.sw?
 scripts/flyers/.env
+scripts/flyers/service-account.json

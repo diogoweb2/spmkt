@@ -108,11 +108,22 @@ function kindOf(unit) {
   return Object.keys(UNITS).find((k) => UNITS[k].includes(unit))
 }
 
-async function insertProducts(products, storeName, env) {
+// Opens the family db doc, preferring the service-account key (writes
+// directly, no password) and falling back to family-password sign-in.
+async function openFamilyDoc(env) {
+  const keyPath = join(here, 'service-account.json')
+  if (existsSync(keyPath)) {
+    const admin = (await import('firebase-admin')).default
+    const app = admin.initializeApp({ credential: admin.credential.cert(JSON.parse(readFileSync(keyPath, 'utf8'))) })
+    const user = await app.auth().getUserByEmail('family@smartprice.app')
+    const ref = app.firestore().doc(`users/${user.uid}`)
+    const snap = await ref.get()
+    return { db: snap.exists ? snap.data() : null, save: (db) => ref.set(db) }
+  }
+  if (!env.FAMILY_PASSWORD) throw new Error('need scripts/flyers/service-account.json or FAMILY_PASSWORD in .env')
   const { initializeApp } = await import('firebase/app')
   const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth')
   const { getFirestore, doc, getDoc, setDoc } = await import('firebase/firestore')
-
   const app = initializeApp({
     apiKey: 'AIzaSyCVCDsMH1-cJ2rr_7o8WVBG26__Jl2bMXg',
     authDomain: 'spmkt-cc6fd.firebaseapp.com',
@@ -121,8 +132,12 @@ async function insertProducts(products, storeName, env) {
   const cred = await signInWithEmailAndPassword(getAuth(app), 'family@smartprice.app', env.FAMILY_PASSWORD)
   const ref = doc(getFirestore(app), 'users', cred.user.uid)
   const snap = await getDoc(ref)
-  if (!snap.exists()) throw new Error('family db doc not found')
-  const db = snap.data()
+  return { db: snap.exists() ? snap.data() : null, save: (db) => setDoc(ref, db) }
+}
+
+async function insertProducts(products, storeName, env) {
+  const { db, save } = await openFamilyDoc(env)
+  if (!db) throw new Error('family db doc not found')
   db.stores ??= []
   db.items ??= []
   db.records ??= []
@@ -170,7 +185,7 @@ async function insertProducts(products, storeName, env) {
     db.records.push(rec)
     added++
   }
-  await setDoc(ref, db)
+  await save(db)
   log(`${storeName}: saved ${added} new records (${products.length - added} skipped as dupes/invalid)`)
 }
 
@@ -178,8 +193,8 @@ async function insertProducts(products, storeName, env) {
 
 const stores = JSON.parse(readFileSync(join(here, 'stores.json'), 'utf8'))
 const env = loadEnv()
-if (!DRY_RUN && !env.FAMILY_PASSWORD) {
-  console.error('FAMILY_PASSWORD missing in scripts/flyers/.env — add it, or run with --dry-run')
+if (!DRY_RUN && !env.FAMILY_PASSWORD && !existsSync(join(here, 'service-account.json'))) {
+  console.error('Missing credentials: add scripts/flyers/service-account.json (preferred) or FAMILY_PASSWORD to scripts/flyers/.env')
   process.exit(1)
 }
 

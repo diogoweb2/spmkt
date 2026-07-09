@@ -110,7 +110,7 @@ Compared **only against other records of the same item + variant**, using normal
 - Extraction rules: multi-product deals are split into one record per product; meat items get inferred `frozen`/`bones`/`skin` variant flags; per-lb / per-kg / package sizes map to the normal qty+unit model; "2 for $5" → unit price.
 - Items are matched to existing items by case-insensitive name, otherwise created (`category` meat/other, `kind` from the unit). The store is matched by name or created.
 - Flyer records carry `source: 'flyer'` and `ts` = import time. Dedupe: an identical deal (same item, store, price, qty, unit, variant) within the last 7 days is not re-inserted.
-- Auth: signs in as the family account using `FAMILY_PASSWORD` from `scripts/flyers/.env` (gitignored).
+- Auth: prefers a Firebase admin service-account key at `scripts/flyers/service-account.json` (writes directly, bypassing security rules); falls back to signing in with `FAMILY_PASSWORD` from `scripts/flyers/.env`. Both files are gitignored.
 
 ## 13. Roadmap (agreed, not yet built)
 
