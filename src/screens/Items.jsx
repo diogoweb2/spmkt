@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo } from '../lib/analysis'
 import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
+import { mergeItems, suggestName, targetUnit } from '../lib/merge'
 import UnitToggle from '../components/UnitToggle'
 
 export default function Items({ db, update, push }) {
@@ -8,6 +9,11 @@ export default function Items({ db, update, push }) {
   const [comparing, setComparing] = useState(false)
   const [selected, setSelected] = useState([]) // keys "itemId|variant"
   const [report, setReport] = useState(false)
+  // Hold a row to enter merge mode; selection is per item (all its variants).
+  const [merging, setMerging] = useState(false)
+  const [mergeSel, setMergeSel] = useState([]) // item ids
+  const [mergeName, setMergeName] = useState(null) // confirm dialog open when a string
+  const press = useRef({ timer: null, long: false })
   // Adding a price needs a store: ask once, then remember (db.currentStoreId)
   const [pendingAdd, setPendingAdd] = useState(null) // {itemId} | {query}
 
@@ -85,6 +91,46 @@ export default function Items({ db, update, push }) {
     setReport(false)
   }
 
+  const mergeItemsSel = mergeSel.map((id) => db.items.find((i) => i.id === id)).filter(Boolean)
+  const mergeKind = mergeItemsSel[0]?.kind ?? null
+  const mergeRecs = db.records.filter((r) => mergeSel.includes(r.itemId))
+  const recordCounts = Object.fromEntries(mergeItemsSel.map((i) => [i.id, itemRecords(db, i.id).length]))
+
+  function holdStart(item) {
+    if (comparing) return
+    press.current.long = false
+    press.current.timer = setTimeout(() => {
+      press.current.long = true
+      setMerging(true)
+      setMergeSel([item.id])
+      navigator.vibrate?.(20)
+    }, 450)
+  }
+
+  function holdEnd() {
+    clearTimeout(press.current.timer)
+  }
+
+  function toggleMerge(item) {
+    setMergeSel((sel) =>
+      sel.includes(item.id) ? sel.filter((id) => id !== item.id) : [...sel, item.id],
+    )
+  }
+
+  function exitMerge() {
+    setMerging(false)
+    setMergeSel([])
+    setMergeName(null)
+  }
+
+  function doMerge() {
+    const name = mergeName.trim()
+    if (!name) return
+    const ids = mergeSel
+    update((d) => mergeItems(d, ids, name))
+    exitMerge()
+  }
+
   if (report && selectedRows.length >= 2) {
     return (
       <CompareReport
@@ -97,11 +143,11 @@ export default function Items({ db, update, push }) {
   }
 
   return (
-    <div className="screen" style={comparing ? { paddingBottom: 170 } : undefined}>
+    <div className="screen" style={comparing || merging ? { paddingBottom: 170 } : undefined}>
       <div className="topbar">
-        <h1>{comparing ? 'Pick items ⚖️' : 'Your items 📋'}</h1>
-        {!comparing && <UnitToggle db={db} update={update} />}
-        {!comparing && allRows.filter((r) => r.recs.length).length >= 2 && (
+        <h1>{comparing ? 'Pick items ⚖️' : merging ? 'Merge products 🔗' : 'Your items 📋'}</h1>
+        {!comparing && !merging && <UnitToggle db={db} update={update} />}
+        {!comparing && !merging && allRows.filter((r) => r.recs.length).length >= 2 && (
           <button className="btn small ghost" onClick={() => setComparing(true)}>
             ⚖️ Compare
           </button>
@@ -114,7 +160,13 @@ export default function Items({ db, update, push }) {
         </p>
       )}
 
-      {!comparing && currentStore && (
+      {merging && (
+        <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
+          Tap the duplicates of the same product — only same-type items. Their prices are kept.
+        </p>
+      )}
+
+      {!comparing && !merging && currentStore && (
         <button
           className="badge lvl-first"
           style={{ border: 'none', cursor: 'pointer', marginTop: -8, marginBottom: 10, fontSize: 12, padding: '5px 10px' }}
@@ -135,7 +187,7 @@ export default function Items({ db, update, push }) {
         </div>
       )}
 
-      {!comparing && q.trim() && !db.items.some((i) => i.name.toLowerCase() === q.trim().toLowerCase()) && (
+      {!comparing && !merging && q.trim() && !db.items.some((i) => i.name.toLowerCase() === q.trim().toLowerCase()) && (
         <button className="btn ghost" style={{ marginBottom: 14 }} onClick={() => startAdd({ query: q.trim() })}>
           + Add “{q.trim()}” with a price
         </button>
@@ -148,9 +200,12 @@ export default function Items({ db, update, push }) {
           const cheapest = pricesByStore(db, item.id, variant)[0]
           const norms = recs.map((r) => recordNorm(r, item)).filter((n) => n != null)
           const best = norms.length ? Math.min(...norms) : null
-          const isSel = selected.includes(key)
+          const isMergeSel = merging && mergeSel.includes(item.id)
+          const isSel = selected.includes(key) || isMergeSel
           // By-piece-only products have no normalized price: nothing to compare.
-          const disabled = comparing && (recs.length === 0 || best == null || (compareKind && item.kind !== compareKind && !isSel))
+          const disabled =
+            (comparing && (recs.length === 0 || best == null || (compareKind && item.kind !== compareKind && !isSel))) ||
+            (merging && mergeKind && item.kind !== mergeKind)
           return (
             <button
               key={key}
@@ -159,11 +214,21 @@ export default function Items({ db, update, push }) {
                 ...(isSel ? { background: 'var(--accent-soft)', borderRadius: 10, padding: '13px 8px' } : null),
                 ...(disabled ? { opacity: 0.35 } : null),
               }}
-              onClick={() => (comparing ? !disabled && toggleSelect(row) : push({ name: 'item', itemId: item.id, variant }))}
+              onPointerDown={() => !merging && holdStart(item)}
+              onPointerUp={holdEnd}
+              onPointerLeave={holdEnd}
+              onPointerCancel={holdEnd}
+              onContextMenu={(e) => e.preventDefault()}
+              onClick={() => {
+                if (press.current.long) { press.current.long = false; return }
+                if (merging) return !disabled && toggleMerge(item)
+                if (comparing) return !disabled && toggleSelect(row)
+                push({ name: 'item', itemId: item.id, variant })
+              }}
             >
               <div className="grow">
                 <div className="title" style={{ whiteSpace: 'normal' }}>
-                  {comparing ? (isSel ? '☑️ ' : '⬜ ') : ''}
+                  {comparing || merging ? (isSel ? '☑️ ' : '⬜ ') : ''}
                   {item.name}
                   {label && <span className="muted small"> ({label})</span>}
                   {(() => {
@@ -188,7 +253,7 @@ export default function Items({ db, update, push }) {
                 </div>
                 <div className="sub">{best != null ? 'best' : recs.length ? 'by piece' : 'best'}</div>
               </div>
-              {!comparing && (
+              {!comparing && !merging && (
                 <span
                   role="button"
                   aria-label={`Add price for ${item.name}`}
@@ -201,7 +266,7 @@ export default function Items({ db, update, push }) {
                   +
                 </span>
               )}
-              {!comparing && <span className="chev">›</span>}
+              {!comparing && !merging && <span className="chev">›</span>}
             </button>
           )
         })}
@@ -232,6 +297,67 @@ export default function Items({ db, update, push }) {
             <button className="btn ghost" style={{ marginTop: 10 }} onClick={() => setPendingAdd(null)}>
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {merging && (
+        <div className="compare-tray">
+          <div className="small" style={{ marginBottom: 8 }}>
+            {mergeItemsSel.length < 2 ? (
+              <span className="muted">Pick at least 2 products to merge.</span>
+            ) : (
+              mergeItemsSel.map((i) => (
+                <span key={i.id} className="badge lvl-first" style={{ marginRight: 6, marginBottom: 4, display: 'inline-block' }}>
+                  {i.name}
+                </span>
+              ))
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn ghost" onClick={exitMerge}>Cancel</button>
+            <button
+              className="btn"
+              disabled={mergeItemsSel.length < 2}
+              onClick={() => setMergeName(suggestName(mergeItemsSel, recordCounts))}
+            >
+              🔗 Merge {mergeItemsSel.length >= 2 ? `(${mergeItemsSel.length})` : ''}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mergeName != null && (
+        <div className="modal-backdrop" onClick={() => setMergeName(null)}>
+          <div className="card" style={{ width: 'min(92vw, 400px)' }} onClick={(e) => e.stopPropagation()}>
+            <h2>Merge into one product 🔗</h2>
+            <p className="muted small" style={{ marginTop: -6 }}>
+              {mergeItemsSel.map((i) => i.name).join(' + ')}
+            </p>
+            <label className="field">
+              <span className="lbl">Final name</span>
+              <input
+                type="text"
+                value={mergeName}
+                autoFocus
+                onChange={(e) => setMergeName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && doMerge()}
+              />
+            </label>
+            <ul className="muted small" style={{ paddingLeft: 18, margin: '4px 0 12px' }}>
+              <li>{mergeRecs.length} price{mergeRecs.length === 1 ? '' : 's'} kept, with their history.</li>
+              {(() => {
+                const t = targetUnit(mergeItemsSel, mergeRecs)
+                return t && <li>Prices converted to a single unit: <b>{t}</b>.</li>
+              })()}
+              {mergeItemsSel.some((i) => i.category === 'meat') && !mergeItemsSel.every((i) => i.category === 'meat') && (
+                <li>Kept as <b>meat</b> (fresh/frozen, bones and skin stay per price).</li>
+              )}
+            </ul>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn ghost" onClick={() => setMergeName(null)}>Cancel</button>
+              <button className="btn" disabled={!mergeName.trim()} onClick={doMerge}>Merge</button>
+            </div>
           </div>
         </div>
       )}

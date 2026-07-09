@@ -94,6 +94,13 @@ Compared **only against other records of the same item + variant**, using normal
 - One row per **item + variant**, full variation name spelled out (never truncated), sorted by most recent record.
 - Each row shows: record count, current cheapest store, and best-ever price in display units.
 
+### Merging duplicate products (`src/lib/merge.js`)
+- **Hold** any row → merge mode. Tap rows to select; selection is **per item** (all its variants at once). Only same-`kind` items can be selected together (others are dimmed). "🔗 Merge (n)" enabled at ≥ 2.
+- A dialog asks for the **final name**, prefilled with the name of the item having the most records (ties → shorter name), and lists what will happen. Confirm or edit.
+- Merge keeps the **first-selected item's id**, moves every record of the others onto it, and deletes them. **No price is ever lost**; all history and variants survive.
+- Field merge rules: `name` = user's choice · `category` = `meat` if any is meat, else the first non-`other` · `annualQty` = largest explicit value, `null` if none · `kind` must already match.
+- **Unit normalization**: if the merged records use mixed units of one kind, all comparable records are rewritten to one unit — the first **present** among `lb, kg, g, oz` (weight) / `L, ml` (volume). Price is unchanged, `qty` is converted (rounded to 3 decimals) and becomes the item's `defaultUnit`. By-piece `un` records (§3) keep their unit — the app never invents a weight.
+
 ### Adding prices from the Items list ("current store")
 - The app remembers **where the user is** (`db.currentStoreId`): set when a store is tapped on Home, when a store is created, or when picked in the "Where are you?" dialog. It stays until the user changes it (📍 chip on the Items tab → "change").
 - Every item row has a **+** button → logs a new price for that item at the current store (form prefilled from the item's last record).
