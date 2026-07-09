@@ -178,11 +178,11 @@ async function insertProducts(products, storeName, env) {
       ts: Date.now(),
       source: 'flyer',
     }
-    // Dedupe: identical flyer deal already captured this week.
+    // Dedupe: flyers are weekly, so at most one flyer record per
+    // item+store+variant per week (extraction can vary slightly run to run).
     const dup = db.records.some((r) =>
-      r.itemId === rec.itemId && r.storeId === rec.storeId && r.price === rec.price &&
-      r.qty === rec.qty && r.unit === rec.unit && r.frozen === rec.frozen &&
-      r.bones === rec.bones && r.skin === rec.skin && r.ts > weekAgo)
+      r.source === 'flyer' && r.itemId === rec.itemId && r.storeId === rec.storeId &&
+      r.frozen === rec.frozen && r.bones === rec.bones && r.skin === rec.skin && r.ts > weekAgo)
     if (dup) continue
     db.records.push(rec)
     added++
