@@ -17,6 +17,7 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 | **Store** | `id, name, color, defaultUnit` | Preloaded: Costco (kg), Walmart (lb), No Frills (lb). User can add/rename stores and change their default unit. |
 | **Item** | `id, name, category, kind, defaultUnit, annualQty` | `category`: `meat` or `other` (legacy items may have `dairy`/`produce`/`pantry` — still valid). `kind`: `weight` \| `volume` \| `count`, derived from the unit chosen when the item was created. `annualQty`: user-set yearly consumption in base units, `null` = use default. |
 | **Record** (price entry) | `id, itemId, storeId, price, qty, unit, frozen, bones, skin, ts` | `frozen/bones/skin`: booleans for meat, `null` for non-meat. `ts` is set automatically at save time — **the app never asks for a date**. |
+| **Note** (bug/idea) | `id, type, text, done, ts` | `type`: `bug` \| `idea`. Personal todo list, see §11. |
 
 - **Prices are append-only.** Updating a price creates a new record; history is never overwritten. Records can be individually deleted (with confirmation).
 - **Auth**: one shared family password. The app signs everyone into a single Firebase Auth email/password account (`family@smartprice.app`); the password is stored hashed in Firebase Auth and is changed from the Firebase console. Same account ⇒ one shared household db. Asked once per device (Firebase Auth session persists); Settings offers "Lock app". The phase-1 PIN is retired (`pinHash` dropped during migration).
@@ -95,7 +96,14 @@ Compared **only against other records of the same item + variant**, using normal
 
 - Grid of store buttons only (no recent list). Known chains show their bundled logo on a white chip over the brand color (`src/lib/logos.js`, matched loosely by name); unknown stores show their name. Each button shows its logged-price count. "+ Add store" creates a store (default unit lb) and jumps straight into logging a price there.
 
-## 11. Roadmap (agreed, not yet built)
+## 11. Bugs & ideas (Settings)
+
+- A todo list inside Settings (`src/components/Notes.jsx`) for logging **bugs 🐞** and **ideas 💡** while using the app.
+- A note is `{id, type, text, done, ts}`; `ts` is set at save time. Stored in `db.notes`, so it syncs across devices and is included in the JSON export.
+- Add: pick type (bug/idea), type the text, Add (or Enter). Rows can be checked off (`done`, shown struck through) or deleted (with confirmation).
+- Filters: **Open** (default) · 🐞 Bugs · 💡 Ideas · Done. Bug/Idea filters show open notes of that type only. Sorted newest first; the heading shows the open count.
+
+## 12. Roadmap (agreed, not yet built)
 
 - ~~Phase 2: Firebase (auth + Firestore sync)~~ — **done (2026-07)**: Google auth, Firestore db, Hosting, GitHub auto-deploy (`.github/workflows/deploy.yml`, pushes to `main` on github.com/diogoweb2/spmkt). Notifications and offline data intentionally left out.
 - Phase 3: photo of shelf label → AI API → structured JSON entry.

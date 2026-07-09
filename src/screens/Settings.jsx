@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { exportJSON, DEFAULT_DB } from '../lib/db'
 import { UNITS } from '../lib/units'
+import Notes from '../components/Notes'
 
 function replaceDB(update, data) {
   update((d) => {
@@ -84,6 +85,8 @@ export default function Settings({ db, update, onSignOut }) {
           ))}
         </div>
       </div>
+
+      <Notes db={db} update={update} />
 
       <div className="card">
         <h2>Backup</h2>

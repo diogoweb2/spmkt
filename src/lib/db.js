@@ -16,6 +16,7 @@ export const DEFAULT_DB = {
   ],
   items: [], // {id, name, category, kind, defaultUnit, annualQty|null}
   records: [], // {id, itemId, storeId, price, qty, unit, frozen|null, ts}
+  notes: [], // {id, type: 'bug'|'idea', text, done, ts}
 }
 
 function userDoc(userId) {
