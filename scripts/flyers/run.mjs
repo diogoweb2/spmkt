@@ -83,7 +83,7 @@ function findClaude() {
   throw new Error('claude CLI not found')
 }
 
-const EXTRACT_PROMPT = (imgPath) => `Read the flyer image at ${imgPath} and extract every grocery deal on it.
+const EXTRACT_PROMPT = (imgPath) => `Use the Read tool to open the image file ${imgPath} — it is a supermarket flyer page and you CAN view images via the Read tool. Then extract every grocery deal on it.
 
 Output ONLY a JSON array (no prose, no markdown fence). Each element:
 {"name": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null}
@@ -100,7 +100,7 @@ Rules:
 function extractProducts(imgPath, storeName) {
   const claude = findClaude()
   log(`${storeName}: extracting with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath), '--allowedTools', 'Read'], {
+  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     timeout: 10 * 60 * 1000,
