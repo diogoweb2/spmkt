@@ -83,7 +83,7 @@ function findClaude() {
   throw new Error('claude CLI not found')
 }
 
-const EXTRACT_PROMPT = (imgPath) => `Use the Read tool to open the image file ${imgPath} — it is a supermarket flyer page and you CAN view images via the Read tool. Then extract every grocery deal on it.
+const EXTRACT_PROMPT = (imgPath, existingNames) => `Use the Read tool to open the image file ${imgPath} — it is a supermarket flyer page and you CAN view images via the Read tool. Then extract every grocery deal on it.
 
 Output ONLY a JSON array (no prose, no markdown fence). Each element:
 {"name": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null}
@@ -93,14 +93,15 @@ Rules:
 - price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un". A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
 - Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. Only use unit "un" when no size is printed. If a multi-product deal shows a different size per product, use each product's own size.
 - Split combined deals: if one price covers multiple distinct products ("pork loin or chicken thighs $3.99/lb"), output one element per product, same price.
-- Meat items: category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
+- Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip non-product content (banners, store hours, points promos without a concrete product price).
-- If a price is unreadable, skip that product.`
+- If a price is unreadable, skip that product.${existingNames.length ? `
+- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation: ${JSON.stringify(existingNames)}` : ''}`
 
-function extractProducts(imgPath, storeName) {
+function extractProducts(imgPath, storeName, existingNames) {
   const claude = findClaude()
   log(`${storeName}: extracting with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
+  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath, existingNames), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     timeout: 10 * 60 * 1000,
@@ -197,11 +198,11 @@ async function insertProducts(products, storeName, env, validUntil) {
       source: 'flyer',
       validUntil: validUntil ?? null,
     }
-    // Dedupe: flyers are weekly, so at most one flyer record per
-    // item+store+variant per week (extraction can vary slightly run to run).
+    // Dedupe: flyers are weekly, so at most one flyer record per item+store
+    // per week — extraction can vary run to run (names, meat classification),
+    // and a store never has two flyer deals for the same item in one week.
     const dup = db.records.some((r) =>
-      r.source === 'flyer' && r.itemId === rec.itemId && r.storeId === rec.storeId &&
-      r.frozen === rec.frozen && r.bones === rec.bones && r.skin === rec.skin && r.ts > weekAgo)
+      r.source === 'flyer' && r.itemId === rec.itemId && r.storeId === rec.storeId && r.ts > weekAgo)
     if (dup) continue
     db.records.push(rec)
     added++
@@ -226,7 +227,8 @@ for (const store of stores) {
   try {
     const dl = await downloadFirstPage(store, workDir)
     img = dl.file
-    const products = extractProducts(img, store.name)
+    const existingNames = DRY_RUN ? [] : (await openFamilyDoc(env)).db?.items?.map((i) => i.name) ?? []
+    const products = extractProducts(img, store.name, existingNames)
     log(`${store.name}: extracted ${products.length} products`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
