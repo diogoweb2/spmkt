@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel } from '../lib/analysis'
+import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo } from '../lib/analysis'
 import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
 import UnitToggle from '../components/UnitToggle'
 
@@ -165,6 +165,14 @@ export default function Items({ db, update, push }) {
                   {comparing ? (isSel ? '☑️ ' : '⬜ ') : ''}
                   {item.name}
                   {label && <span className="muted small"> ({label})</span>}
+                  {(() => {
+                    const fi = flyerInfo(recs[0])
+                    return fi && (
+                      <span className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 6, fontSize: 11, verticalAlign: 'middle' }}>
+                        {fi.text}
+                      </span>
+                    )
+                  })()}
                 </div>
                 <div className="sub">
                   {recs.length} record{recs.length === 1 ? '' : 's'}

@@ -39,10 +39,20 @@ function loadEnv() {
 
 // ---------- download ----------
 
+// "Valid from July 9 to 15, 2026" / "Valid from June 30 to July 6, 2026" ->
+// timestamp of the last valid day, end of day. null if not found.
+function parseValidUntil(html) {
+  const m = html.match(/Valid from\s+([A-Za-z]+)\s+\d{1,2}\s+to\s+(?:([A-Za-z]+)\s+)?(\d{1,2}),?\s+(\d{4})/)
+  if (!m) return null
+  const dt = new Date(`${m[2] || m[1]} ${m[3]}, ${m[4]} 23:59:59`)
+  return isNaN(dt) ? null : dt.getTime()
+}
+
 async function downloadFirstPage(store, dir) {
   const res = await fetch(store.url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
   if (!res.ok) throw new Error(`fetch ${store.url}: HTTP ${res.status}`)
   const html = await res.text()
+  const validUntil = parseValidUntil(html)
   // Full-res page images look like /data/promotions/<id>/<slug>_01.jpg — take
   // the first promotion on the page (the main weekly flyer).
   const m = html.match(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_01\.jpg[^"' ]*/)
@@ -51,8 +61,8 @@ async function downloadFirstPage(store, dir) {
   if (!imgRes.ok) throw new Error(`image download: HTTP ${imgRes.status}`)
   const file = join(dir, `${store.name.toLowerCase().replace(/\W+/g, '-')}-page1.jpg`)
   writeFileSync(file, Buffer.from(await imgRes.arrayBuffer()))
-  log(`${store.name}: downloaded ${m[0]} -> ${file}`)
-  return file
+  log(`${store.name}: downloaded ${m[0]} -> ${file} (valid until ${validUntil ? new Date(validUntil).toDateString() : 'unknown'})`)
+  return { file, validUntil }
 }
 
 // ---------- claude extraction ----------
@@ -81,6 +91,7 @@ Output ONLY a JSON array (no prose, no markdown fence). Each element:
 Rules:
 - name: clean generic product name with brand if shown (e.g. "Chicken Drumsticks", "Coca-Cola 12-pack"). No sizes/prices in the name.
 - price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un". A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
+- Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. Only use unit "un" when no size is printed. If a multi-product deal shows a different size per product, use each product's own size.
 - Split combined deals: if one price covers multiple distinct products ("pork loin or chicken thighs $3.99/lb"), output one element per product, same price.
 - Meat items: category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip non-product content (banners, store hours, points promos without a concrete product price).
@@ -137,7 +148,7 @@ async function openFamilyDoc(env) {
   return { db: snap.exists() ? snap.data() : null, save: (db) => setDoc(ref, db) }
 }
 
-async function insertProducts(products, storeName, env) {
+async function insertProducts(products, storeName, env, validUntil) {
   const { db, save } = await openFamilyDoc(env)
   if (!db) throw new Error('family db doc not found')
   db.stores ??= []
@@ -177,6 +188,7 @@ async function insertProducts(products, storeName, env) {
       skin: isMeat ? !!p.skin : null,
       ts: Date.now(),
       source: 'flyer',
+      validUntil: validUntil ?? null,
     }
     // Dedupe: flyers are weekly, so at most one flyer record per
     // item+store+variant per week (extraction can vary slightly run to run).
@@ -205,13 +217,14 @@ let failed = false
 for (const store of stores) {
   let img
   try {
-    img = await downloadFirstPage(store, workDir)
+    const dl = await downloadFirstPage(store, workDir)
+    img = dl.file
     const products = extractProducts(img, store.name)
     log(`${store.name}: extracted ${products.length} products`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
     } else {
-      await insertProducts(products, store.name, env)
+      await insertProducts(products, store.name, env, dl.validUntil)
     }
   } catch (err) {
     failed = true

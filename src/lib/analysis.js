@@ -26,6 +26,17 @@ export function variantLabel(rec) {
   ].join(', ')
 }
 
+// Flyer-imported records carry a validity window. Returns null for normal
+// records; otherwise { text, valid } for a badge next to the product name —
+// expired flyer prices stay in the db as reference.
+export function flyerInfo(rec) {
+  if (rec?.source !== 'flyer') return null
+  if (!rec.validUntil) return { text: '📰 flyer', valid: true }
+  const d = new Date(rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const valid = Date.now() <= rec.validUntil
+  return { text: valid ? `📰 flyer until ${d}` : `📰 flyer ended ${d}`, valid }
+}
+
 export function variantRecords(db, itemId, key) {
   return itemRecords(db, itemId).filter((r) => variantKey(r) === key)
 }

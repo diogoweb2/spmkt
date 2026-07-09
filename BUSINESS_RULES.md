@@ -16,7 +16,7 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 |---|---|---|
 | **Store** | `id, name, color, defaultUnit` | Preloaded: Costco (kg), Walmart (lb), No Frills (lb). User can add/rename stores and change their default unit. |
 | **Item** | `id, name, category, kind, defaultUnit, annualQty` | `category`: `meat` or `other` (legacy items may have `dairy`/`produce`/`pantry` — still valid). `kind`: `weight` \| `volume` \| `count`, derived from the unit chosen when the item was created. `annualQty`: user-set yearly consumption in base units, `null` = use default. |
-| **Record** (price entry) | `id, itemId, storeId, price, qty, unit, frozen, bones, skin, ts` | `frozen/bones/skin`: booleans for meat, `null` for non-meat. `ts` is set automatically at save time — **the app never asks for a date**. |
+| **Record** (price entry) | `id, itemId, storeId, price, qty, unit, frozen, bones, skin, ts` (+ `source, validUntil` on flyer imports) | `frozen/bones/skin`: booleans for meat, `null` for non-meat. `ts` is set automatically at save time — **the app never asks for a date**. Flyer-imported records (§12) add `source: 'flyer'` and `validUntil`. |
 | **Note** (bug/idea) | `id, type, text, done, ts` | `type`: `bug` \| `idea`. Personal todo list, see §11. |
 
 - **Prices are append-only.** Updating a price creates a new record; history is never overwritten. Records can be individually deleted (with confirmation).
@@ -109,7 +109,9 @@ Compared **only against other records of the same item + variant**, using normal
 - For each supermarket in `scripts/flyers/stores.json` (currently FreshCo Ontario), it downloads **page 1 only** of the flyer from flyers-on-line.com, has Claude (headless CLI) read the image, and appends the extracted deals to the family Firestore doc. The downloaded image is deleted afterwards.
 - Extraction rules: multi-product deals are split into one record per product; meat items get inferred `frozen`/`bones`/`skin` variant flags; per-lb / per-kg / package sizes map to the normal qty+unit model; "2 for $5" → unit price.
 - Items are matched to existing items by case-insensitive name, otherwise created (`category` meat/other, `kind` from the unit). The store is matched by name or created.
-- Flyer records carry `source: 'flyer'` and `ts` = import time. Dedupe: an identical deal (same item, store, price, qty, unit, variant) within the last 7 days is not re-inserted.
+- Flyer records carry `source: 'flyer'`, `ts` = import time, and `validUntil` = end of the flyer's last valid day (parsed from the site's "Valid from … to …" text; `null` if not found). Dedupe: at most one flyer record per item+store+variant per 7 days.
+- **Packaged/boxed products (frozen meat boxes, tubs, etc.) are recorded by printed package size** (e.g. 750 g, 1.1 kg), not as 1 unit — so a small FreshCo box is comparable with a big Costco box via the normal per-100g math.
+- **UI**: records with a flyer source show a 📰 badge next to the product name (Items list, product page title) and in history rows — green "flyer until \<date\>" while valid, amber "flyer ended \<date\>" after. Expired flyer prices stay in the db as reference.
 - Auth: prefers a Firebase admin service-account key at `scripts/flyers/service-account.json` (writes directly, bypassing security rules); falls back to signing in with `FAMILY_PASSWORD` from `scripts/flyers/.env`. Both files are gitignored.
 
 ## 13. Roadmap (agreed, not yet built)

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
-  variantKey, variantLabel,
+  variantKey, variantLabel, flyerInfo,
 } from '../lib/analysis'
 import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel } from '../lib/units'
 import MonthlyChart from '../components/MonthlyChart'
@@ -56,7 +56,17 @@ export default function ItemDetail({ db, update, pop, view }) {
       <div className="topbar">
         <button className="back" onClick={pop}>‹</button>
         <div>
-          <h1>{item.name}</h1>
+          <h1>
+            {item.name}
+            {(() => {
+              const fi = flyerInfo(latest)
+              return fi && (
+                <span className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 8, fontSize: 11, verticalAlign: 'middle' }}>
+                  {fi.text}
+                </span>
+              )
+            })()}
+          </h1>
           <span className="muted small">prices shown per {displayUnitLabel(item.kind, wu)}</span>
         </div>
         {item.kind === 'weight' && <UnitToggle db={db} update={update} />}
@@ -121,7 +131,7 @@ export default function ItemDetail({ db, update, pop, view }) {
                     <div className="title">
                       {selected ? '☑️ ' : idx === 0 && byStore.length > 1 ? '🏆 ' : ''}{store.name}
                     </div>
-                    <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(rec.price)} · {new Date(rec.ts).toLocaleDateString()}</div>
+                    <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(rec.price)} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? ` · ${flyerInfo(rec).text}` : ''}</div>
                   </div>
                   <div className="right title">{fmt(norm)}</div>
                 </button>
@@ -180,7 +190,7 @@ export default function ItemDetail({ db, update, pop, view }) {
                   <div className="title small" style={{ fontSize: 14 }}>
                     {store?.name ?? '?'} · {fmtQty(r.qty, r.unit)}
                   </div>
-                  <div className="sub">{new Date(r.ts).toLocaleDateString()}</div>
+                  <div className="sub">{new Date(r.ts).toLocaleDateString()}{flyerInfo(r) ? ` · ${flyerInfo(r).text}` : ''}</div>
                   <div className={'hist-bar ' + cls} style={{ width: `${Math.max(6, pct * 100)}%`, marginTop: 6 }} />
                 </div>
                 <div className="right">
