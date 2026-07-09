@@ -103,7 +103,16 @@ Compared **only against other records of the same item + variant**, using normal
 - Add: pick type (bug/idea), type the text, Add (or Enter). Rows can be checked off (`done`, shown struck through) or deleted (with confirmation).
 - Filters: **Open** (default) · 🐞 Bugs · 💡 Ideas · Done. Bug/Idea filters show open notes of that type only. Sorted newest first; the heading shows the open count.
 
-## 12. Roadmap (agreed, not yet built)
+## 12. Weekly flyer import (local job)
+
+- `scripts/flyers/run.mjs`, scheduled by launchd (`com.spmkt.flyers`, Thursdays 8:00) on Diogo's Mac. Logs to `~/Library/Logs/spmkt-flyers.log`.
+- For each supermarket in `scripts/flyers/stores.json` (currently FreshCo Ontario), it downloads **page 1 only** of the flyer from flyers-on-line.com, has Claude (headless CLI) read the image, and appends the extracted deals to the family Firestore doc. The downloaded image is deleted afterwards.
+- Extraction rules: multi-product deals are split into one record per product; meat items get inferred `frozen`/`bones`/`skin` variant flags; per-lb / per-kg / package sizes map to the normal qty+unit model; "2 for $5" → unit price.
+- Items are matched to existing items by case-insensitive name, otherwise created (`category` meat/other, `kind` from the unit). The store is matched by name or created.
+- Flyer records carry `source: 'flyer'` and `ts` = import time. Dedupe: an identical deal (same item, store, price, qty, unit, variant) within the last 7 days is not re-inserted.
+- Auth: signs in as the family account using `FAMILY_PASSWORD` from `scripts/flyers/.env` (gitignored).
+
+## 13. Roadmap (agreed, not yet built)
 
 - ~~Phase 2: Firebase (auth + Firestore sync)~~ — **done (2026-07)**: Google auth, Firestore db, Hosting, GitHub auto-deploy (`.github/workflows/deploy.yml`, pushes to `main` on github.com/diogoweb2/spmkt). Notifications and offline data intentionally left out.
 - Phase 3: photo of shelf label → AI API → structured JSON entry.
