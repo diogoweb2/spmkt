@@ -7,6 +7,7 @@ import superstore from '../assets/logos/superstore.png'
 import metro from '../assets/logos/metro.svg'
 import freshco from '../assets/logos/freshco.svg'
 import sobeys from '../assets/logos/sobeys.svg'
+import foodbasics from '../assets/logos/foodbasics.png'
 
 const LOGOS = [
   { match: ['costco'], src: costco },
@@ -16,6 +17,7 @@ const LOGOS = [
   { match: ['metro'], src: metro },
   { match: ['freshco'], src: freshco },
   { match: ['sobeys'], src: sobeys },
+  { match: ['foodbasics'], src: foodbasics },
 ]
 
 export function storeLogo(name) {
