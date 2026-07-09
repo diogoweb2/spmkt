@@ -113,10 +113,12 @@ function kindOf(unit) {
 async function openFamilyDoc(env) {
   const keyPath = join(here, 'service-account.json')
   if (existsSync(keyPath)) {
-    const admin = (await import('firebase-admin')).default
-    const app = admin.initializeApp({ credential: admin.credential.cert(JSON.parse(readFileSync(keyPath, 'utf8'))) })
-    const user = await app.auth().getUserByEmail('family@smartprice.app')
-    const ref = app.firestore().doc(`users/${user.uid}`)
+    const { initializeApp, cert } = await import('firebase-admin/app')
+    const { getAuth } = await import('firebase-admin/auth')
+    const { getFirestore } = await import('firebase-admin/firestore')
+    const app = initializeApp({ credential: cert(JSON.parse(readFileSync(keyPath, 'utf8'))) })
+    const user = await getAuth(app).getUserByEmail('family@smartprice.app')
+    const ref = getFirestore(app).doc(`users/${user.uid}`)
     const snap = await ref.get()
     return { db: snap.exists ? snap.data() : null, save: (db) => ref.set(db) }
   }
