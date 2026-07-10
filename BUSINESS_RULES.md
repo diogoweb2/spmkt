@@ -156,9 +156,9 @@ Code: `src/lib/meat.js` (grouping + ratings), `scripts/flyers/classify-meat.mjs`
 - Classifies meat items with any field missing and refreshes `market` older than 6 days, in one Claude (headless, WebSearch-enabled) call; matches results back by case-insensitive name and validates enums/thresholds before saving.
 
 ### Meat deals section (Home)
-- Groups: **Beef, Pork, Chicken, Fish, Other meat** (unclassified meat falls under Other). Within a group, `natural` items list first; `ultra` items follow under an "Ultra-processed" subheading. Empty groups are hidden.
+- Groups: **Beef, Pork, Chicken, Fish, Other meat** (unclassified meat falls under Other). Within a group, `natural` items list first; `ultra` items follow under an "Ultra-processed" subheading **and each carries an "ultra-processed" chip** next to the name. Empty groups are hidden.
 - One row per meat item: its current best deal = cheapest of each store's **latest non-expired comparable** record. **Expired flyer prices (`validUntil` in the past) are never shown**; records without `validUntil` (manual entries) never expire. By-piece records are excluded (§3).
-- Row shows: item name, `cheapest @ <store>` (+ `until <date>` for flyer deals), price in display units, and a deal rating badge vs `market` ($/lb): ≤ excellent → **🔥 Excellent deal**, ≤ good → **👍 Good deal**, ≤ avg → **😐 Average**, else bad. **Bad deals are not shown on Home at all** — the section shows deals, not warnings. No badge (but the row still shows) until the item has market data. Tapping a row opens the product page.
+- Row shows: item name, `cheapest @ <store>` (+ `until <date>` for flyer deals), price in display units, and a deal rating badge vs `market` ($/lb): ≤ excellent → **🔥 Excellent deal**, ≤ good → **👍 Good deal**, ≤ avg → average, else bad. **Only excellent and good deals are shown on Home** — average and bad prices are hidden (the section shows real deals, not warnings). Items with no market data yet still show, without a badge. Tapping a row opens the product page.
 
 ## 14. Roadmap (agreed, not yet built)
 

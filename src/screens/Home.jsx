@@ -115,7 +115,10 @@ function MeatDeals({ db, push }) {
                   )}
                   <button className="row" onClick={() => push({ name: 'item', itemId: d.item.id })}>
                     <div className="grow">
-                      <div className="title">{d.item.name}</div>
+                      <div className="title">
+                        {d.item.name}
+                        {d.ultra && <span className="badge lvl-ok" style={{ marginLeft: 6 }}>ultra-processed</span>}
+                      </div>
                       <div className="sub">
                         cheapest @ {d.store.name}
                         {d.rec.validUntil ? ` · until ${new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
