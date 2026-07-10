@@ -3,8 +3,9 @@
 //   meatType:   beef | pork | chicken | fish | other
 //   processing: natural (whole/raw cuts) | ultra (nuggets, sausages, deli...)
 //   market:     { excellent, good, avg, updatedAt } — CAD $/lb thresholds for
-//               Toronto supermarkets over the last 12 months, used by the app
-//               to rate a current deal as excellent/good/average/bad.
+//               Toronto supermarkets since Jan 2026 (prices jumped after the
+//               Iran war, so older data is misleading), used by the app to
+//               rate a current deal as excellent/good/average/bad.
 //
 // Runs automatically at the end of the weekly flyer import (run.mjs), which
 // refreshes stale market numbers and classifies newly imported and manually
@@ -25,7 +26,7 @@ const PROMPT = (names) => `You are labeling meat products for a family grocery p
 For EACH product name below, determine:
 - "meatType": one of "beef" | "pork" | "chicken" | "fish" | "other". Fish includes all seafood (shrimp, salmon, tilapia...). Turkey, lamb, duck, goat, veal and multi-meat products are "other".
 - "processing": "natural" for whole or raw cuts (steaks, roasts, chops, ground meat, raw chicken pieces, whole fish, fillets, raw shrimp) or "ultra" for ultra-processed / prepared products (nuggets, anything breaded or battered, sausages, hot dogs, bacon, deli/luncheon meats, burgers/patties, meatballs, marinated or seasoned ready-to-cook meals, canned meat, fish sticks).
-- "market": typical Toronto supermarket prices for this exact product over the LAST 12 MONTHS, in CAD per pound: {"excellent": N, "good": N, "avg": N} where excellent = an exceptional sale price you'd stock up at, good = a solid sale price, avg = the typical everyday shelf price. Must satisfy excellent <= good <= avg. Use the WebSearch tool to check real Toronto grocery prices (flyers, Reddit r/torontoGrocery, store sites) whenever you are not confident. For products sold by package rather than weight, still estimate per-pound prices.
+- "market": typical Toronto supermarket prices for this exact product SINCE JANUARY 2026 ONLY, in CAD per pound: {"excellent": N, "good": N, "avg": N} where excellent = an exceptional sale price you'd stock up at, good = a solid sale price, avg = the typical everyday shelf price. Must satisfy excellent <= good <= avg. IMPORTANT: meat prices rose sharply after the Iran war — anything you remember from 2025 or earlier is too low and must NOT be used. Ground your numbers in CURRENT reality: use the WebSearch tool to check real 2026 Toronto flyer and shelf prices (flyers, RedFlagDeals, SaleWhale, Reddit, store sites); "avg" must match what the product actually costs on the shelf this year, and "excellent" must be a sale price that has actually appeared in a 2026 flyer, not a historical best. For products sold by package rather than weight, still estimate per-pound prices.
 
 Output ONLY a JSON array (no prose, no markdown fence), one element per product, in the SAME ORDER:
 {"name": "<exact input name>", "meatType": "...", "processing": "...", "market": {"excellent": N, "good": N, "avg": N}}

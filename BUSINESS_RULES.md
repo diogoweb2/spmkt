@@ -148,7 +148,7 @@ Code: `src/lib/meat.js` (grouping + ratings), `scripts/flyers/classify-meat.mjs`
 ### Item classification fields (meat items only)
 - `meatType`: `beef` \| `pork` \| `chicken` \| `fish` \| `other` (fish = all seafood; turkey/lamb/duck/mixed → `other`). `null` until classified.
 - `processing`: `natural` (whole/raw cuts: steaks, roasts, ground, raw pieces, fillets) or `ultra` (ultra-processed/prepared: nuggets, breaded, sausages, hot dogs, bacon, deli, burgers, marinated ready-meals, canned). **Manually added meat items default to `natural`**; flyer-created items start `null`.
-- `market`: `{ excellent, good, avg, updatedAt }` — Toronto supermarket price thresholds in **CAD $/lb over the last 12 months**, researched by LLM web search (we don't yet have enough own history; may later be replaced by our own data). `excellent ≤ good ≤ avg` is enforced.
+- `market`: `{ excellent, good, avg, updatedAt }` — Toronto supermarket price thresholds in **CAD $/lb, using prices since Jan 2026 only** (meat prices rose sharply after the Iran war; older prices are misleading), researched by LLM web search (we don't yet have enough own history; may later be replaced by our own data). `excellent ≤ good ≤ avg` is enforced.
 - On merge (§9), the first selected item that has each field wins.
 
 ### Classification pass (`classify-meat.mjs`)
