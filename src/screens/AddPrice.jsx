@@ -80,6 +80,11 @@ export default function AddPrice({ db, update, push, pop, view }) {
           kind: unitKind(unit),
           defaultUnit: unit,
           annualQty: null,
+          // Meat classification: manual items default to natural; the weekly
+          // LLM pass fills meatType and market thresholds (BUSINESS_RULES §13).
+          meatType: null,
+          processing: category === 'meat' ? 'natural' : null,
+          market: null,
         })
       }
       const meat = (item ? item.category : category) === 'meat'

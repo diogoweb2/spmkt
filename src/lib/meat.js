@@ -1,0 +1,78 @@
+// Meat deals: grouping by animal, natural vs ultra-processed, and market-based
+// deal ratings. Items get `meatType`, `processing` and `market` from the weekly
+// LLM classification pass (scripts/flyers/classify-meat.mjs); manual items
+// default to processing 'natural' and are classified on the next pass.
+
+import { UNITS } from './units'
+import { itemRecords, isComparable, recordNorm } from './analysis'
+
+export const MEAT_TYPES = ['beef', 'pork', 'chicken', 'fish', 'other']
+
+export const MEAT_TYPE_LABEL = {
+  beef: '🐄 Beef',
+  pork: '🐖 Pork',
+  chicken: '🐔 Chicken',
+  fish: '🐟 Fish',
+  other: '🍖 Other meat',
+}
+
+export const PROCESSING_LABEL = { natural: 'Natural', ultra: 'Ultra-processed' }
+
+export const RATING = {
+  excellent: { label: '🔥 Excellent deal', cls: 'lvl-best' },
+  good: { label: '👍 Good deal', cls: 'lvl-good' },
+  average: { label: '😐 Average', cls: 'lvl-ok' },
+  bad: { label: '❌ Bad deal', cls: 'lvl-high' },
+}
+
+// Rates a normalized price (per 100 g) against the item's LLM-researched
+// Toronto market thresholds ($/lb). null when the item has no market data yet.
+export function dealRating(item, norm) {
+  const m = item.market
+  if (!m || norm == null) return null
+  const perLb = norm * (UNITS.lb.toBase / 100)
+  if (perLb <= m.excellent) return 'excellent'
+  if (perLb <= m.good) return 'good'
+  if (perLb <= m.avg) return 'average'
+  return 'bad'
+}
+
+// Current best deal per meat item, grouped by meat type. A deal is each
+// store's latest non-expired comparable record; the cheapest store wins.
+// Records with no validUntil (manual entries) never expire.
+export function meatDeals(db) {
+  const now = Date.now()
+  const groups = {}
+  for (const item of db.items) {
+    if (item.category !== 'meat') continue
+    const recs = itemRecords(db, item.id).filter(
+      (r) => isComparable(item, r) && (r.validUntil == null || r.validUntil >= now),
+    )
+    const byStore = new Map()
+    for (const r of recs) {
+      if (!byStore.has(r.storeId)) byStore.set(r.storeId, r) // recs sorted desc -> latest wins
+    }
+    let best = null
+    for (const rec of byStore.values()) {
+      const norm = recordNorm(rec, item)
+      if (norm != null && (!best || norm < best.norm)) best = { rec, norm }
+    }
+    if (!best) continue
+    const store = db.stores.find((s) => s.id === best.rec.storeId)
+    if (!store) continue
+    const type = MEAT_TYPES.includes(item.meatType) ? item.meatType : 'other'
+    ;(groups[type] ??= []).push({
+      item,
+      store,
+      rec: best.rec,
+      norm: best.norm,
+      rating: dealRating(item, best.norm),
+      ultra: item.processing === 'ultra',
+    })
+  }
+  // Natural products first, then ultra-processed; cheapest first within each.
+  for (const list of Object.values(groups)) {
+    list.sort((a, b) => (a.ultra === b.ultra ? a.norm - b.norm : a.ultra ? 1 : -1))
+  }
+  return groups
+}

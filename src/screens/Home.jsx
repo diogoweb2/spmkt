@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { uid } from '../lib/db'
 import { storeLogo } from '../lib/logos'
+import { fmtDisplay } from '../lib/units'
+import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, RATING } from '../lib/meat'
 
 const STORE_COLORS = ['#e11d48', '#2563eb', '#f59e0b', '#7c3aed', '#0d9488', '#db2777']
 
@@ -62,6 +64,8 @@ export default function Home({ db, update, push }) {
         </button>
       </div>
 
+      <MeatDeals db={db} push={push} />
+
       {adding && (
         <div className="card" style={{ marginTop: 14 }}>
           <label className="field">
@@ -81,6 +85,53 @@ export default function Home({ db, update, push }) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Current best meat deal per product, grouped Beef/Pork/Chicken/Fish, natural
+// products first with ultra-processed under their own subheading. Expired
+// flyer deals never show; manual prices (no validUntil) always qualify.
+function MeatDeals({ db, push }) {
+  const groups = useMemo(() => meatDeals(db), [db])
+  const types = MEAT_TYPES.filter((t) => groups[t]?.length)
+  if (!types.length) return null
+
+  return (
+    <div className="meat-deals" style={{ marginTop: 22 }}>
+      <h2 style={{ fontSize: 18, margin: '0 0 4px' }}>🥩 Meat deals</h2>
+      {types.map((t) => {
+        const firstUltra = groups[t].findIndex((d) => d.ultra)
+        return (
+          <div key={t} style={{ marginTop: 10 }}>
+            <div className="lbl" style={{ marginBottom: 4 }}>{MEAT_TYPE_LABEL[t]}</div>
+            <div className="card list" style={{ padding: '2px 14px' }}>
+              {groups[t].map((d, idx) => (
+                <Fragment key={d.item.id}>
+                  {idx === firstUltra && (
+                    <div className="sub" style={{ padding: '8px 2px 0', color: 'var(--muted)', fontSize: 12 }}>
+                      Ultra-processed
+                    </div>
+                  )}
+                  <button className="row" onClick={() => push({ name: 'item', itemId: d.item.id })}>
+                    <div className="grow">
+                      <div className="title">{d.item.name}</div>
+                      <div className="sub">
+                        cheapest @ {d.store.name}
+                        {d.rec.validUntil ? ` · until ${new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
+                      </div>
+                    </div>
+                    <div className="right">
+                      <div className="title">{fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit)}</div>
+                      {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
+                    </div>
+                  </button>
+                </Fragment>
+              ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

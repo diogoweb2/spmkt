@@ -14,7 +14,7 @@ export const DEFAULT_DB = {
     { id: 's-walmart', name: 'Walmart', color: '#2563eb', defaultUnit: 'lb' },
     { id: 's-nofrills', name: 'No Frills', color: '#f59e0b', defaultUnit: 'lb' },
   ],
-  items: [], // {id, name, category, kind, defaultUnit, annualQty|null}
+  items: [], // {id, name, category, kind, defaultUnit, annualQty|null, meatType|null, processing|null, market|null}
   records: [], // {id, itemId, storeId, price, qty, unit, frozen|null, ts}
   notes: [], // {id, type: 'bug'|'idea', text, done, ts}
   ignored: [], // {id, name, ts} — products the user deleted & ignored; flyer import skips their kind

@@ -15,7 +15,7 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 | Entity | Fields | Notes |
 |---|---|---|
 | **Store** | `id, name, color, defaultUnit` | Preloaded: Costco (kg), Walmart (lb), No Frills (lb). User can add/rename stores and change their default unit. |
-| **Item** | `id, name, category, kind, defaultUnit, annualQty` | `category`: `meat` or `other` (legacy items may have `dairy`/`produce`/`pantry` — still valid). `kind`: `weight` \| `volume` \| `count`, derived from the unit chosen when the item was created. `annualQty`: user-set yearly consumption in base units, `null` = use default. |
+| **Item** | `id, name, category, kind, defaultUnit, annualQty` (+ `meatType, processing, market` on meat) | `category`: `meat` or `other` (legacy items may have `dairy`/`produce`/`pantry` — still valid). `kind`: `weight` \| `volume` \| `count`, derived from the unit chosen when the item was created. `annualQty`: user-set yearly consumption in base units, `null` = use default. Meat classification fields: see §13. |
 | **Record** (price entry) | `id, itemId, storeId, price, qty, unit, frozen, bones, skin, ts` (+ `source, validUntil` on flyer imports) | `frozen/bones/skin`: booleans for meat, `null` for non-meat. `ts` is set automatically at save time — **the app never asks for a date**. Flyer-imported records (§12) add `source: 'flyer'` and `validUntil`. |
 | **Note** (bug/idea) | `id, type, text, done, ts` | `type`: `bug` \| `idea`. Personal todo list, see §11. |
 | **Ignored** | `id, name, ts` | A product type the user never wants imported, see §9. |
@@ -116,7 +116,8 @@ Compared **only against other records of the same item + variant**, using normal
 
 ## 10. Home screen
 
-- Grid of store buttons only (no recent list). Known chains show their bundled logo on a white chip over the brand color (`src/lib/logos.js`, matched loosely by name); unknown stores show their name. Each button shows its logged-price count. "+ Add store" creates a store (default unit lb) and jumps straight into logging a price there.
+- Grid of store buttons. Known chains show their bundled logo on a white chip over the brand color (`src/lib/logos.js`, matched loosely by name); unknown stores show their name. Each button shows its logged-price count. "+ Add store" creates a store (default unit lb) and jumps straight into logging a price there.
+- Below the grid: the **Meat deals** section (§13).
 
 ## 11. Bugs & ideas (Settings)
 
@@ -140,7 +141,26 @@ Compared **only against other records of the same item + variant**, using normal
 - **UI**: records with a flyer source show a 📰 badge next to the product name (Items list, product page title) and in history rows — green "flyer until \<date\>" while valid, amber "flyer ended \<date\>" after. Expired flyer prices stay in the db as reference.
 - Auth: prefers a Firebase admin service-account key at `scripts/flyers/service-account.json` (writes directly, bypassing security rules); falls back to signing in with `FAMILY_PASSWORD` from `scripts/flyers/.env`. Both files are gitignored.
 
-## 13. Roadmap (agreed, not yet built)
+## 13. Meat deals (Home) & LLM meat classification
+
+Code: `src/lib/meat.js` (grouping + ratings), `scripts/flyers/classify-meat.mjs` (LLM pass), Home's `MeatDeals`.
+
+### Item classification fields (meat items only)
+- `meatType`: `beef` \| `pork` \| `chicken` \| `fish` \| `other` (fish = all seafood; turkey/lamb/duck/mixed → `other`). `null` until classified.
+- `processing`: `natural` (whole/raw cuts: steaks, roasts, ground, raw pieces, fillets) or `ultra` (ultra-processed/prepared: nuggets, breaded, sausages, hot dogs, bacon, deli, burgers, marinated ready-meals, canned). **Manually added meat items default to `natural`**; flyer-created items start `null`.
+- `market`: `{ excellent, good, avg, updatedAt }` — Toronto supermarket price thresholds in **CAD $/lb over the last 12 months**, researched by LLM web search (we don't yet have enough own history; may later be replaced by our own data). `excellent ≤ good ≤ avg` is enforced.
+- On merge (§9), the first selected item that has each field wins.
+
+### Classification pass (`classify-meat.mjs`)
+- Runs automatically at the **end of every weekly flyer import** (`run.mjs`), and can run standalone (`--all` reclassifies everything, `--dry-run` doesn't save).
+- Classifies meat items with any field missing and refreshes `market` older than 6 days, in one Claude (headless, WebSearch-enabled) call; matches results back by case-insensitive name and validates enums/thresholds before saving.
+
+### Meat deals section (Home)
+- Groups: **Beef, Pork, Chicken, Fish, Other meat** (unclassified meat falls under Other). Within a group, `natural` items list first; `ultra` items follow under an "Ultra-processed" subheading. Empty groups are hidden.
+- One row per meat item: its current best deal = cheapest of each store's **latest non-expired comparable** record. **Expired flyer prices (`validUntil` in the past) are never shown**; records without `validUntil` (manual entries) never expire. By-piece records are excluded (§3).
+- Row shows: item name, `cheapest @ <store>` (+ `until <date>` for flyer deals), price in display units, and a deal rating badge vs `market` ($/lb): ≤ excellent → **🔥 Excellent deal**, ≤ good → **👍 Good deal**, ≤ avg → **😐 Average**, else **❌ Bad deal**. No badge until the item has market data. Tapping a row opens the product page.
+
+## 14. Roadmap (agreed, not yet built)
 
 - ~~Phase 2: Firebase (auth + Firestore sync)~~ — **done (2026-07)**: Google auth, Firestore db, Hosting, GitHub auto-deploy (`.github/workflows/deploy.yml`, pushes to `main` on github.com/diogoweb2/spmkt). Notifications and offline data intentionally left out.
 - Phase 3: photo of shelf label → AI API → structured JSON entry.

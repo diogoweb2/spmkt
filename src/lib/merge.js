@@ -54,6 +54,10 @@ export function mergedItem(items, records, name) {
       : (items.find((i) => i.category && i.category !== 'other')?.category ?? 'other'),
     defaultUnit,
     annualQty: annuals.length ? Math.max(...annuals) : null,
+    // Meat classification survives a merge: first item that has each field wins.
+    meatType: items.find((i) => i.meatType)?.meatType ?? null,
+    processing: items.find((i) => i.processing)?.processing ?? null,
+    market: items.find((i) => i.market)?.market ?? null,
   }
 }
 
