@@ -60,13 +60,15 @@ export function meatDeals(db) {
     if (!best) continue
     const store = db.stores.find((s) => s.id === best.rec.storeId)
     if (!store) continue
+    const rating = dealRating(item, best.norm)
+    if (rating === 'bad') continue // Home shows deals, not warnings
     const type = MEAT_TYPES.includes(item.meatType) ? item.meatType : 'other'
     ;(groups[type] ??= []).push({
       item,
       store,
       rec: best.rec,
       norm: best.norm,
-      rating: dealRating(item, best.norm),
+      rating,
       ultra: item.processing === 'ultra',
     })
   }

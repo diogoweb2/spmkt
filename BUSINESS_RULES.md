@@ -158,7 +158,7 @@ Code: `src/lib/meat.js` (grouping + ratings), `scripts/flyers/classify-meat.mjs`
 ### Meat deals section (Home)
 - Groups: **Beef, Pork, Chicken, Fish, Other meat** (unclassified meat falls under Other). Within a group, `natural` items list first; `ultra` items follow under an "Ultra-processed" subheading. Empty groups are hidden.
 - One row per meat item: its current best deal = cheapest of each store's **latest non-expired comparable** record. **Expired flyer prices (`validUntil` in the past) are never shown**; records without `validUntil` (manual entries) never expire. By-piece records are excluded (§3).
-- Row shows: item name, `cheapest @ <store>` (+ `until <date>` for flyer deals), price in display units, and a deal rating badge vs `market` ($/lb): ≤ excellent → **🔥 Excellent deal**, ≤ good → **👍 Good deal**, ≤ avg → **😐 Average**, else **❌ Bad deal**. No badge until the item has market data. Tapping a row opens the product page.
+- Row shows: item name, `cheapest @ <store>` (+ `until <date>` for flyer deals), price in display units, and a deal rating badge vs `market` ($/lb): ≤ excellent → **🔥 Excellent deal**, ≤ good → **👍 Good deal**, ≤ avg → **😐 Average**, else bad. **Bad deals are not shown on Home at all** — the section shows deals, not warnings. No badge (but the row still shows) until the item has market data. Tapping a row opens the product page.
 
 ## 14. Roadmap (agreed, not yet built)
 
