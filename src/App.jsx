@@ -3,6 +3,7 @@ import { watchAuth, signOutUser } from './lib/firebase'
 import { ensureDB, subscribeDB, saveDB } from './lib/db'
 import SignInScreen from './screens/SignInScreen'
 import Home from './screens/Home'
+import Location from './screens/Location'
 import AddPrice from './screens/AddPrice'
 import ItemDetail from './screens/ItemDetail'
 import Items from './screens/Items'
@@ -73,13 +74,15 @@ export default function App() {
   return (
     <div className="app">
       {view.name === 'home' && <Home {...props} />}
+      {view.name === 'location' && <Location {...props} />}
       {view.name === 'addPrice' && <AddPrice {...props} />}
       {view.name === 'item' && <ItemDetail {...props} />}
       {view.name === 'items' && <Items {...props} />}
       {view.name === 'settings' && <Settings {...props} onSignOut={() => signOutUser()} />}
 
       <nav className="nav">
-        <NavBtn ico="🏪" label="Shop" on={['home', 'addPrice'].includes(view.name)} onClick={() => goTab('home')} />
+        <NavBtn ico="🏠" label="Home" on={view.name === 'home'} onClick={() => goTab('home')} />
+        <NavBtn ico="📍" label="Location" on={['location', 'addPrice'].includes(view.name)} onClick={() => goTab('location')} />
         <NavBtn ico="📋" label="Items" on={['items', 'item'].includes(view.name)} onClick={() => goTab('items')} />
         <NavBtn ico="⚙️" label="Settings" on={view.name === 'settings'} onClick={() => goTab('settings')} />
       </nav>

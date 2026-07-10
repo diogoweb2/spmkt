@@ -109,15 +109,15 @@ Compared **only against other records of the same item + variant**, using normal
 - Settings lists the ignored products with a "Stop ignoring" button (which does not restore the deleted prices).
 
 ### Adding prices from the Items list ("current store")
-- The app remembers **where the user is** (`db.currentStoreId`): set when a store is tapped on Home, when a store is created, or when picked in the "Where are you?" dialog. It stays until the user changes it (📍 chip on the Items tab → "change").
+- The app remembers **where the user is** (`db.currentStoreId`): set when a store is tapped on the Location tab, when a store is created, or when picked in the "Where are you?" dialog. It stays until the user changes it (📍 chip on the Items tab → "change").
 - Every item row has a **+** button → logs a new price for that item at the current store (form prefilled from the item's last record).
 - If the search has no exact match, an **"+ Add '<term>' with a price"** button creates the product and logs its first price in one flow.
 - If no current store is set, either action first asks "Where are you?" (store list); the choice is remembered.
 
-## 10. Home screen
+## 10. Home & Location screens
 
-- Grid of store buttons. Known chains show their bundled logo on a white chip over the brand color (`src/lib/logos.js`, matched loosely by name); unknown stores show their name. Each button shows its logged-price count. "+ Add store" creates a store (default unit lb) and jumps straight into logging a price there.
-- Below the grid: the **Meat deals** section (§13).
+- **Home** (🏠 tab) is the **Meat deals** page (§13). When there are no qualifying deals it shows an empty state explaining deals come from the weekly flyer import.
+- **Location** (📍 tab, "Where are you?") holds the store grid. Known chains show their bundled logo on a white chip over the brand color (`src/lib/logos.js`, matched loosely by name); unknown stores show their name. Each button shows its logged-price count; tapping a store sets `currentStoreId` and opens price logging there. "+ Add store" creates a store (default unit lb) and jumps straight into logging a price there.
 
 ## 11. Bugs & ideas (Settings)
 
