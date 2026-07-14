@@ -190,7 +190,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
               <div key={r.id} className="row" style={{ cursor: 'default' }}>
                 <button
                   className="grow"
-                  style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0, cursor: 'pointer' }}
+                  style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit' }}
                   onClick={() => push({ name: 'addPrice', storeId: r.storeId, presetItemId: item.id, editRecordId: r.id })}
                   aria-label="Edit record"
                 >
