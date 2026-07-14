@@ -78,6 +78,12 @@ export default function Home({ db, push }) {
       </Chips>
       {dealStores.length > 1 && (
         <Chips style={{ marginBottom: 8 }}>
+          <button
+            aria-label="Clear store selection"
+            onClick={() => setStoresOff(new Set(dealStores.map((s) => s.id)))}
+          >
+            ✕
+          </button>
           {dealStores.map((s) => (
             <button
               key={s.id}
