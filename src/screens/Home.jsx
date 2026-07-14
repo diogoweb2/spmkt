@@ -1,11 +1,12 @@
-import { Fragment, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
 import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, RATING } from '../lib/meat'
 
-// Home = current meat deals, grouped Beef/Pork/Chicken/Fish, natural products
-// first with ultra-processed chips + subheading. Expired flyer prices never
-// show. Multiselect chips filter by store and deal rating (default:
-// excellent + good, all stores). Store picking lives in the Location tab.
+// Home = current meat deals, grouped Beef/Pork/Chicken/Fish; ultra-processed
+// items get their own "<Type> · ultra-processed" section after the natural
+// one. Expired flyer prices never show. Multiselect chips filter by store and
+// deal rating (default: excellent + good, all stores). Store picking lives in
+// the Location tab.
 const RATING_KEYS = Object.keys(RATING)
 
 // Horizontally scrollable chip row; wheel + drag scrolling for mouse users
@@ -57,7 +58,17 @@ export default function Home({ db, push }) {
   const show = (d) =>
     !storesOff.has(d.store.id) && (d.rating == null || ratingsOn.has(d.rating))
 
-  const types = MEAT_TYPES.filter((t) => groups[t]?.some(show))
+  // One section per meat type for natural items, followed by a separate
+  // "<Type> · ultra-processed" section when the type has ultra items.
+  const sections = MEAT_TYPES.flatMap((t) => {
+    const list = (groups[t] ?? []).filter(show)
+    const natural = list.filter((d) => !d.ultra)
+    const ultra = list.filter((d) => d.ultra)
+    const out = []
+    if (natural.length) out.push({ key: t, label: MEAT_TYPE_LABEL[t], list: natural })
+    if (ultra.length) out.push({ key: `${t}-ultra`, label: `${MEAT_TYPE_LABEL[t]} · ultra-processed`, list: ultra })
+    return out
+  })
 
   return (
     <div className="screen">
@@ -96,7 +107,7 @@ export default function Home({ db, push }) {
         </Chips>
       )}
 
-      {types.length === 0 && (
+      {sections.length === 0 && (
         <div className="empty" style={{ padding: 32 }}>
           No meat deals match the filters.
           <div className="sub" style={{ marginTop: 6 }}>
@@ -105,42 +116,28 @@ export default function Home({ db, push }) {
         </div>
       )}
 
-      {types.map((t) => {
-        const list = groups[t].filter(show)
-        const firstUltra = list.findIndex((d) => d.ultra)
-        return (
-          <div key={t} style={{ marginTop: 10 }}>
-            <div className="lbl" style={{ marginBottom: 4 }}>{MEAT_TYPE_LABEL[t]}</div>
-            <div className="card list" style={{ padding: '2px 14px' }}>
-              {list.map((d, idx) => (
-                <Fragment key={d.item.id}>
-                  {idx === firstUltra && (
-                    <div className="sub" style={{ padding: '8px 2px 0', color: 'var(--muted)', fontSize: 12 }}>
-                      Ultra-processed
-                    </div>
-                  )}
-                  <button className="row" onClick={() => push({ name: 'item', itemId: d.item.id })}>
-                    <div className="grow">
-                      <div className="title">
-                        {d.item.name}
-                        {d.ultra && <span className="badge lvl-ok" style={{ marginLeft: 6 }}>ultra-processed</span>}
-                      </div>
-                      <div className="sub">
-                        cheapest @ {d.store.name}
-                        {d.rec.validUntil ? ` · until ${new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
-                      </div>
-                    </div>
-                    <div className="right">
-                      <div className="title">{fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit)}</div>
-                      {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
-                    </div>
-                  </button>
-                </Fragment>
-              ))}
-            </div>
+      {sections.map(({ key, label, list }) => (
+        <div key={key} style={{ marginTop: 10 }}>
+          <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>
+          <div className="card list" style={{ padding: '2px 14px' }}>
+            {list.map((d) => (
+              <button key={d.item.id} className="row" onClick={() => push({ name: 'item', itemId: d.item.id })}>
+                <div className="grow">
+                  <div className="title">{d.item.name}</div>
+                  <div className="sub">
+                    cheapest @ {d.store.name}
+                    {d.rec.validUntil ? ` · until ${new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
+                  </div>
+                </div>
+                <div className="right">
+                  <div className="title">{fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit)}</div>
+                  {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
+                </div>
+              </button>
+            ))}
           </div>
-        )
-      })}
+        </div>
+      ))}
     </div>
   )
 }
