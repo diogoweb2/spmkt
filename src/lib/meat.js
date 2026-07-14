@@ -18,6 +18,22 @@ export const MEAT_TYPE_LABEL = {
 
 export const PROCESSING_LABEL = { natural: 'Natural', ultra: 'Ultra-processed' }
 
+// Instant keyword-based meat-type guess for items the weekly LLM pass hasn't
+// classified yet (manual items land on Home right away instead of under
+// "Other meat"). The LLM pass later writes the authoritative `meatType`.
+const TYPE_WORDS = {
+  beef: /\b(beef|steak|veal|angus|brisket|sirloin|ribeye|striploin|t-bone)\b/,
+  pork: /\b(pork|ham|bacon|prosciutto|pancetta|capicollo)\b/,
+  chicken: /\b(chicken|poulet|hen)\b/,
+  fish: /\b(fish|salmon|tilapia|basa|trout|cod|haddock|tuna|sardines?|mackerel|halibut|shrimp|seafood|crab|lobster|scallops?)\b/,
+}
+
+export function guessMeatType(name) {
+  const n = (name ?? '').toLowerCase()
+  for (const [type, re] of Object.entries(TYPE_WORDS)) if (re.test(n)) return type
+  return null
+}
+
 export const RATING = {
   excellent: { label: '🔥 Excellent deal', cls: 'lvl-best' },
   good: { label: '👍 Good deal', cls: 'lvl-good' },
@@ -61,7 +77,9 @@ export function meatDeals(db) {
     const store = db.stores.find((s) => s.id === best.rec.storeId)
     if (!store) continue
     const rating = dealRating(item, best.norm)
-    const type = MEAT_TYPES.includes(item.meatType) ? item.meatType : 'other'
+    const type = MEAT_TYPES.includes(item.meatType)
+      ? item.meatType
+      : guessMeatType(item.name) ?? 'other'
     ;(groups[type] ??= []).push({
       item,
       store,

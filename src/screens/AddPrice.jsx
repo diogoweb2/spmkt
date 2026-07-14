@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { uid } from '../lib/db'
 import { suggestedUnit, suggestedQty, itemRecords } from '../lib/analysis'
 import { KIND_UNITS, unitKind } from '../lib/units'
+import { guessMeatType } from '../lib/meat'
 
 const CATEGORIES = [
   { id: 'meat', label: '🥩 Meat' },
@@ -113,9 +114,10 @@ export default function AddPrice({ db, update, push, pop, view }) {
           kind: unitKind(unit),
           defaultUnit: unit,
           annualQty: null,
-          // Meat classification: the user picks natural/ultra; the weekly
-          // LLM pass fills meatType and market thresholds (BUSINESS_RULES §13).
-          meatType: null,
+          // Meat classification: the user picks natural/ultra, the name gives
+          // an instant meatType guess; the weekly LLM pass fills the
+          // authoritative meatType and market thresholds (BUSINESS_RULES §13).
+          meatType: category === 'meat' ? guessMeatType(query) : null,
           processing: category === 'meat' ? processing : null,
           market: null,
         })
