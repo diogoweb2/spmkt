@@ -42,6 +42,7 @@ export default function Home({ db, push }) {
   const [storesOff, setStoresOff] = useState(() => new Set())
   const [typesOff, setTypesOff] = useState(() => new Set())
   const [proc, setProc] = useState('all') // cycles all -> natural -> ultra
+  const [sort, setSort] = useState('price') // 'price' | 'deal' | 'name'
 
   const dealStores = useMemo(() => {
     const map = new Map()
@@ -62,11 +63,19 @@ export default function Home({ db, push }) {
     (proc === 'all' || (proc === 'ultra') === d.ultra) &&
     (d.rating == null || ratingsOn.has(d.rating))
 
+  // 'deal' = biggest discount vs the item's market avg price; no-market last.
+  const dealScore = (d) => (d.item.market ? d.norm / d.item.market.avg : Infinity)
+  const cmp = {
+    price: (a, b) => a.norm - b.norm,
+    deal: (a, b) => dealScore(a) - dealScore(b),
+    name: (a, b) => a.item.name.localeCompare(b.item.name),
+  }[sort]
+
   // One section per meat type for natural items, followed by a separate
   // "<Type> · ultra-processed" section when the type has ultra items.
   const sections = MEAT_TYPES.flatMap((t) => {
     if (typesOff.has(t)) return []
-    const list = (groups[t] ?? []).filter(show)
+    const list = (groups[t] ?? []).filter(show).sort(cmp)
     const natural = list.filter((d) => !d.ultra)
     const ultra = list.filter((d) => d.ultra)
     const out = []
@@ -134,6 +143,15 @@ export default function Home({ db, push }) {
           ))}
         </Chips>
       )}
+
+      <Chips style={{ marginBottom: 8 }}>
+        <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)', flex: '0 0 auto' }}>Sort</span>
+        {[['price', '$ Cheapest'], ['deal', '🔥 Best deal'], ['name', 'A–Z']].map(([k, label]) => (
+          <button key={k} className={sort === k ? 'on' : ''} onClick={() => setSort(k)}>
+            {label}
+          </button>
+        ))}
+      </Chips>
 
       {sections.length === 0 && (
         <div className="empty" style={{ padding: 32 }}>
