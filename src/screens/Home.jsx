@@ -41,7 +41,7 @@ export default function Home({ db, push }) {
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
   const [storesOff, setStoresOff] = useState(() => new Set())
   const [typesOff, setTypesOff] = useState(() => new Set())
-  const [procOn, setProcOn] = useState(() => new Set(['natural', 'ultra']))
+  const [proc, setProc] = useState('all') // cycles all -> natural -> ultra
 
   const dealStores = useMemo(() => {
     const map = new Map()
@@ -59,7 +59,7 @@ export default function Home({ db, push }) {
   // Items with no market data (rating null) always pass the rating filter.
   const show = (d) =>
     !storesOff.has(d.store.id) &&
-    procOn.has(d.ultra ? 'ultra' : 'natural') &&
+    (proc === 'all' || (proc === 'ultra') === d.ultra) &&
     (d.rating == null || ratingsOn.has(d.rating))
 
   // One section per meat type for natural items, followed by a separate
@@ -77,8 +77,14 @@ export default function Home({ db, push }) {
 
   return (
     <div className="screen">
-      <div className="topbar">
+      <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1>🥩 Meat deals</h1>
+        <button
+          className="btn small ghost"
+          onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
+        >
+          {proc === 'all' ? 'All' : PROCESSING_LABEL[proc]}
+        </button>
       </div>
 
       <Chips style={{ marginBottom: 8 }}>
@@ -100,20 +106,6 @@ export default function Home({ db, push }) {
             onClick={() => toggle(typesOff, setTypesOff, t)}
           >
             {MEAT_TYPE_LABEL[t]}
-          </button>
-        ))}
-        {['natural', 'ultra'].map((p) => (
-          <button
-            key={p}
-            className={procOn.has(p) ? 'on' : ''}
-            onClick={() => {
-              const next = new Set(procOn)
-              if (next.has(p)) next.delete(p)
-              else next.add(p)
-              if (next.size) setProcOn(next) // at least one must stay selected
-            }}
-          >
-            {PROCESSING_LABEL[p]}
           </button>
         ))}
       </Chips>
