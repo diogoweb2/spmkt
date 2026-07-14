@@ -161,7 +161,10 @@ input:focus, select:focus { border-color: var(--accent); }
 }
 
 /* compact filter chips (Home) — single scrollable line */
-.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.chips {
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  touch-action: pan-x pan-y; margin: 0 -16px; padding: 0 16px;
+}
 .chips::-webkit-scrollbar { display: none; }
 .chips button {
   flex: 0 0 auto; padding: 6px 12px; font-size: 13px; font-weight: 600;

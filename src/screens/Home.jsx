@@ -8,6 +8,33 @@ import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, RATING } from '../lib/meat'
 // excellent + good, all stores). Store picking lives in the Location tab.
 const RATING_KEYS = Object.keys(RATING)
 
+// Horizontally scrollable chip row; wheel + drag scrolling for mouse users
+// (the scrollbar is hidden and mice have no horizontal wheel).
+function Chips({ children, style }) {
+  const drag = (e) => {
+    const el = e.currentTarget
+    const startX = e.clientX
+    const startLeft = el.scrollLeft
+    const move = (ev) => { el.scrollLeft = startLeft - (ev.clientX - startX) }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  return (
+    <div
+      className="chips"
+      style={style}
+      onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY + e.deltaX }}
+      onPointerDown={(e) => { if (e.pointerType === 'mouse') drag(e) }}
+    >
+      {children}
+    </div>
+  )
+}
+
 export default function Home({ db, push }) {
   const groups = useMemo(() => meatDeals(db), [db])
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
@@ -38,7 +65,7 @@ export default function Home({ db, push }) {
         <h1>🥩 Meat deals</h1>
       </div>
 
-      <div className="chips" style={{ marginBottom: 8 }}>
+      <Chips style={{ marginBottom: 8 }}>
         {RATING_KEYS.map((r) => (
           <button
             key={r}
@@ -48,9 +75,9 @@ export default function Home({ db, push }) {
             {RATING[r].label.replace(' deal', '')}
           </button>
         ))}
-      </div>
+      </Chips>
       {dealStores.length > 1 && (
-        <div className="chips" style={{ marginBottom: 8 }}>
+        <Chips style={{ marginBottom: 8 }}>
           {dealStores.map((s) => (
             <button
               key={s.id}
@@ -60,7 +87,7 @@ export default function Home({ db, push }) {
               {s.name}
             </button>
           ))}
-        </div>
+        </Chips>
       )}
 
       {types.length === 0 && (
