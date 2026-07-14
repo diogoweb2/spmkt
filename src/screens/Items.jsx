@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo } from '../lib/analysis'
 import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
+import { effectivePrice } from '../lib/cashback'
 import { canMerge, mergeItems, suggestName, targetUnit } from '../lib/merge'
 import { ignoreItems } from '../lib/ignore'
 import UnitToggle from '../components/UnitToggle'
@@ -207,7 +208,7 @@ export default function Items({ db, update, push }) {
         {rows.map((row) => {
           const { item, variant, label, recs, key } = row
           const cheapest = pricesByStore(db, item.id, variant)[0]
-          const norms = recs.map((r) => recordNorm(r, item)).filter((n) => n != null)
+          const norms = recs.map((r) => recordNorm(r, item, db)).filter((n) => n != null)
           const best = norms.length ? Math.min(...norms) : null
           const isMergeSel = merging && mergeSel.includes(item.id)
           const isSel = selected.includes(key) || isMergeSel
@@ -257,7 +258,7 @@ export default function Items({ db, update, push }) {
                 <div className="title" style={{ fontSize: 15, color: 'var(--accent)' }}>
                   {best != null
                     ? fmtDisplay(best, item.kind, db.displayWeightUnit)
-                    : recs[0] ? `${fmtMoney(recs[0].price)} / ${fmtQty(recs[0].qty, recs[0].unit)}` : '—'}
+                    : recs[0] ? `${fmtMoney(effectivePrice(db, recs[0]))} / ${fmtQty(recs[0].qty, recs[0].unit)}` : '—'}
                 </div>
                 <div className="sub">{best != null ? 'best' : recs.length ? 'by piece' : 'best'}</div>
               </div>
@@ -485,7 +486,7 @@ function CompareReport({ db, rows, onBack, onDone }) {
                   {i === 0 ? '🏆 ' : `${i + 1}. `}{name(row)}
                 </div>
                 <div className="sub">
-                  {pick.store.name} · {fmtQty(pick.rec.qty, pick.rec.unit)} for {fmtMoney(pick.rec.price)} · {new Date(pick.rec.ts).toLocaleDateString()}
+                  {pick.store.name} · {fmtQty(pick.rec.qty, pick.rec.unit)} for {fmtMoney(effectivePrice(db, pick.rec))} · {new Date(pick.rec.ts).toLocaleDateString()}
                 </div>
               </div>
               <div className="right">
@@ -512,7 +513,7 @@ function CompareReport({ db, rows, onBack, onDone }) {
                     {i === 0 ? '🏆 ' : `${i + 1}. `}{name(row)}
                   </div>
                   <div className="sub">
-                    {fmtQty(at.rec.qty, at.rec.unit)} for {fmtMoney(at.rec.price)} · {new Date(at.rec.ts).toLocaleDateString()}
+                    {fmtQty(at.rec.qty, at.rec.unit)} for {fmtMoney(effectivePrice(db, at.rec))} · {new Date(at.rec.ts).toLocaleDateString()}
                   </div>
                 </div>
                 <div className="right">

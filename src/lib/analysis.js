@@ -1,4 +1,5 @@
 import { normalizedPrice, defaultAnnual, unitKind } from './units'
+import { cashbackFactor } from './cashback'
 
 // Supermarkets increasingly price meat by piece ("3 pieces $8") with no weight
 // printed. Such a record is stored honestly as `un` even on a weight item —
@@ -9,9 +10,12 @@ export function isComparable(item, rec) {
   return !item || unitKind(rec.unit) === item.kind
 }
 
-export function recordNorm(rec, item) {
+// When `db` is passed, the store's card cashback is baked in (src/lib/cashback.js)
+// so every comparison and display runs on effective (post-cashback) prices.
+export function recordNorm(rec, item, db) {
   if (!isComparable(item, rec)) return null
-  return normalizedPrice(rec.price, rec.qty, rec.unit)
+  const norm = normalizedPrice(rec.price, rec.qty, rec.unit)
+  return norm == null || !db ? norm : norm * cashbackFactor(db, rec.storeId)
 }
 
 export function itemRecords(db, itemId) {
@@ -55,18 +59,18 @@ export function variantRecords(db, itemId, key) {
 // Returns { level: 'first'|'best'|'good'|'ok'|'high', ... }
 export function verdict(db, rec) {
   const item = db.items.find((i) => i.id === rec.itemId)
-  const norm = recordNorm(rec, item)
+  const norm = recordNorm(rec, item, db)
   if (norm == null) return null // by-piece price: nothing to compare it against
   const others = variantRecords(db, rec.itemId, variantKey(rec))
     .filter((r) => r.id !== rec.id && isComparable(item, r))
   if (others.length === 0) return { level: 'first', norm }
 
-  const norms = others.map((r) => recordNorm(r, item)).filter((n) => n != null)
+  const norms = others.map((r) => recordNorm(r, item, db)).filter((n) => n != null)
   const best = Math.min(...norms)
   const sorted = [...norms].sort((a, b) => a - b)
   const median = sorted[Math.floor(sorted.length / 2)]
 
-  const bestRec = others.find((r) => recordNorm(r, item) === best)
+  const bestRec = others.find((r) => recordNorm(r, item, db) === best)
   const bestStore = db.stores.find((s) => s.id === bestRec?.storeId)
 
   let level
@@ -91,7 +95,7 @@ export function pricesByStore(db, itemId, variant) {
     .map(([storeId, rec]) => ({
       store: db.stores.find((s) => s.id === storeId),
       rec,
-      norm: recordNorm(rec, item),
+      norm: recordNorm(rec, item, db),
     }))
     .filter((e) => e.store && e.norm != null)
     .sort((a, b) => a.norm - b.norm)

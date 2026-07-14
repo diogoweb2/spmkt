@@ -70,7 +70,7 @@ export function meatDeals(db) {
     }
     let best = null
     for (const rec of byStore.values()) {
-      const norm = recordNorm(rec, item)
+      const norm = recordNorm(rec, item, db)
       if (norm != null && (!best || norm < best.norm)) best = { rec, norm }
     }
     if (!best) continue

@@ -8,6 +8,7 @@ const LEGACY_KEY = 'smartprice-db-v1'
 
 export const DEFAULT_DB = {
   displayWeightUnit: 'lb', // how weight prices are shown: 'lb' or 'kg'
+  cashback: true, // apply card cashback to all prices (src/lib/cashback.js); Settings toggle
   currentStoreId: null, // where the user is right now; remembered until changed
   stores: [
     { id: 's-costco', name: 'Costco', color: '#e11d48', defaultUnit: 'kg' },

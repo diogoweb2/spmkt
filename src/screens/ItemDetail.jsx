@@ -4,6 +4,7 @@ import {
   variantKey, variantLabel, flyerInfo, isComparable,
 } from '../lib/analysis'
 import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel } from '../lib/units'
+import { effectivePrice } from '../lib/cashback'
 import MonthlyChart from '../components/MonthlyChart'
 import UnitToggle from '../components/UnitToggle'
 
@@ -25,7 +26,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   // Latest comparable price drives the stats; by-piece records are history only.
   const latestCmp = recs.find((r) => isComparable(item, r))
   const byStore = pricesByStore(db, item.id, variant)
-  const norms = recs.map((r) => recordNorm(r, item)).filter((n) => n != null)
+  const norms = recs.map((r) => recordNorm(r, item, db)).filter((n) => n != null)
   const best = norms.length ? Math.min(...norms) : null
   const worst = norms.length ? Math.max(...norms) : null
 
@@ -34,7 +35,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const range = annualSliderRange(item.kind)
 
   // Savings: latest price vs best ever (if latest isn't the best)
-  const savings = latestCmp && best != null ? yearlySavings(item, recordNorm(latestCmp, item), best) : 0
+  const savings = latestCmp && best != null ? yearlySavings(item, recordNorm(latestCmp, item, db), best) : 0
   // Spread savings: worst store vs best store currently
   const spread =
     byStore.length >= 2 ? yearlySavings(item, byStore[byStore.length - 1].norm, byStore[0].norm) : 0
@@ -97,7 +98,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
       {latest && (
         <div className="stat-row">
           <div className="stat">
-            <div className="v">{latestCmp ? fmt(recordNorm(latestCmp, item)).split(' / ')[0] : '—'}</div>
+            <div className="v">{latestCmp ? fmt(recordNorm(latestCmp, item, db)).split(' / ')[0] : '—'}</div>
             <div className="k">Latest</div>
           </div>
           <div className="stat">
@@ -133,7 +134,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                     <div className="title">
                       {selected ? '☑️ ' : idx === 0 && byStore.length > 1 ? '🏆 ' : ''}{store.name}
                     </div>
-                    <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(rec.price)} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? ` · ${flyerInfo(rec).text}` : ''}</div>
+                    <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? ` · ${flyerInfo(rec).text}` : ''}</div>
                   </div>
                   <div className="right title">{fmt(norm)}</div>
                 </button>
@@ -175,7 +176,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
         </div>
       )}
 
-      <MonthlyChart recs={recs} item={item} kind={item.kind} weightUnit={wu} />
+      <MonthlyChart recs={recs} item={item} kind={item.kind} weightUnit={wu} db={db} />
 
       <div className="card">
         <h2>History</h2>
@@ -183,7 +184,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
         <div className="list">
           {recs.map((r) => {
             const store = db.stores.find((s) => s.id === r.storeId)
-            const norm = recordNorm(r, item)
+            const norm = recordNorm(r, item, db)
             const pct = norm != null && worst && worst > 0 ? norm / worst : 1
             const cls = best != null && norm <= best * 1.02 ? '' : norm >= worst * 0.98 && recs.length > 1 ? 'worst' : 'mid'
             return (
@@ -204,9 +205,9 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                 </button>
                 <div className="right">
                   <div className="title" style={{ fontSize: 15 }}>
-                    {norm != null ? fmt(norm) : `${fmtMoney(r.price)} / ${fmtQty(r.qty, r.unit)}`}
+                    {norm != null ? fmt(norm) : `${fmtMoney(effectivePrice(db, r))} / ${fmtQty(r.qty, r.unit)}`}
                   </div>
-                  <div className="sub">{norm != null ? `${fmtMoney(r.price)} total` : 'no weight — reference only'}</div>
+                  <div className="sub">{norm != null ? `${fmtMoney(effectivePrice(db, r))} total` : 'no weight — reference only'}</div>
                 </div>
                 <button
                   className="chev"

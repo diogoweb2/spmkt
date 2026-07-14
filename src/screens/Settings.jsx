@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { exportJSON, DEFAULT_DB } from '../lib/db'
 import { UNITS } from '../lib/units'
 import { unignore } from '../lib/ignore'
+import { cashbackEnabled } from '../lib/cashback'
 import Notes from '../components/Notes'
 
 function replaceDB(update, data) {
@@ -108,6 +109,22 @@ export default function Settings({ db, update, onSignOut }) {
           </div>
         </div>
       )}
+
+      <div className="card">
+        <h2>Card cashback 💳</h2>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          Show and compare all prices after cashback: 5% (Amex) at Metro, Food Basics, Sobeys,
+          FreshCo, Longo's, Whole Foods and Farm Boy · 1.5% (Mastercard) everywhere else.
+        </p>
+        <label className="row" style={{ cursor: 'pointer', gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={cashbackEnabled(db)}
+            onChange={(e) => update((d) => { d.cashback = e.target.checked })}
+          />
+          <span className="title" style={{ fontSize: 15 }}>Apply cashback to prices</span>
+        </label>
+      </div>
 
       <Notes db={db} update={update} />
 
