@@ -28,6 +28,9 @@ export default function AddPrice({ db, update, push, pop, view }) {
     presetItem ? suggestedUnit(db, presetItem, view.storeId) : store?.defaultUnit ?? 'lb',
   )
   const [category, setCategory] = useState(presetItem?.category ?? 'other')
+  // Costco-only meat entry: total package price + weight − "$x off" sticker
+  const [pkgMode, setPkgMode] = useState(false)
+  const [discount, setDiscount] = useState('')
   const [frozen, setFrozen] = useState(presetLast?.frozen ?? false)
   const [bones, setBones] = useState(presetLast?.bones ?? false)
   const [skin, setSkin] = useState(presetLast?.skin ?? false)
@@ -63,9 +66,16 @@ export default function AddPrice({ db, update, push, pop, view }) {
 
   const formVisible = item || creating
   const isMeat = category === 'meat'
+  const isCostco = /costco/i.test(store?.name ?? '')
+  // Package mode is Costco-meat only; the toggle state is ignored elsewhere.
+  const pkg = pkgMode && isMeat && isCostco
+  // Meat label mode: price straight off the label ($/kg or $/lb), qty is 1.
+  const labelMode = isMeat && !pkg
   const priceNum = parseFloat(price)
-  const qtyNum = parseFloat(qty)
-  const valid = formVisible && priceNum > 0 && qtyNum > 0 && (item || query.trim())
+  const discountNum = pkg ? parseFloat(discount) || 0 : 0
+  const effPrice = priceNum - discountNum
+  const qtyNum = labelMode && unit !== 'un' ? 1 : parseFloat(qty)
+  const valid = formVisible && effPrice > 0 && qtyNum > 0 && (item || query.trim())
 
   function save() {
     if (!valid) return
@@ -92,7 +102,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
         id: uid('r'),
         itemId,
         storeId: store.id,
-        price: priceNum,
+        price: pkg ? Math.round(effPrice * 100) / 100 : priceNum,
         qty: qtyNum,
         unit,
         frozen: meat ? frozen : null,
@@ -110,9 +120,10 @@ export default function AddPrice({ db, update, push, pop, view }) {
   // Meat is sold by the piece too ("3 pieces $8", no weight printed) — allow
   // `un` on weight meat items; such records are history-only (never compared).
   const meatItem = (item ?? { category }).category === 'meat'
-  const unitChoices = item
-    ? meatItem && item.kind === 'weight' ? [...KIND_UNITS.weight, 'un'] : KIND_UNITS[item.kind]
-    : ALL_UNITS
+  const unitChoices = meatItem
+    ? pkg ? KIND_UNITS.weight : ['kg', 'lb', 'un']
+    : item ? KIND_UNITS[item.kind] : ALL_UNITS
+  if (!unitChoices.includes(unit)) setUnit(unitChoices.includes(store?.defaultUnit) ? store.defaultUnit : unitChoices[0])
   const byPiece = item && unitKind(unit) !== item.kind
 
   return (
@@ -184,8 +195,22 @@ export default function AddPrice({ db, update, push, pop, view }) {
             </label>
           )}
 
+          {isMeat && isCostco && (
+            <label className="field">
+              <span className="lbl">Price type</span>
+              <div className="seg">
+                <button type="button" className={!pkgMode ? 'on' : ''} onClick={() => setPkgMode(false)}>
+                  🏷️ Label price
+                </button>
+                <button type="button" className={pkgMode ? 'on' : ''} onClick={() => setPkgMode(true)}>
+                  📦 Package −$ off
+                </button>
+              </div>
+            </label>
+          )}
+
           <label className="field">
-            <span className="lbl">Price</span>
+            <span className="lbl">{pkg ? 'Package total price' : labelMode && unit !== 'un' ? `Price per ${unit}` : 'Price'}</span>
             <div className="price-input">
               <span>$</span>
               <input
@@ -201,20 +226,40 @@ export default function AddPrice({ db, update, push, pop, view }) {
             </div>
           </label>
 
-          <div style={{ display: 'flex', gap: 10 }}>
-            <label className="field" style={{ flex: 1 }}>
-              <span className="lbl">Quantity</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="any"
-                min="0"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-              />
+          {pkg && (
+            <label className="field">
+              <span className="lbl">Discount sticker</span>
+              <div className="price-input">
+                <span>−$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                />
+              </div>
             </label>
+          )}
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            {(!labelMode || unit === 'un') && (
+              <label className="field" style={{ flex: 1 }}>
+                <span className="lbl">{pkg ? 'Weight' : labelMode ? 'Pieces' : 'Quantity'}</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min="0"
+                  value={qty}
+                  onChange={(e) => setQty(e.target.value)}
+                />
+              </label>
+            )}
             <label className="field" style={{ flex: 2 }}>
-              <span className="lbl">Unit</span>
+              <span className="lbl">{labelMode ? 'Per' : 'Unit'}</span>
               <div className="seg">
                 {unitChoices.map((u) => (
                   <button key={u} type="button" className={unit === u ? 'on' : ''} onClick={() => setUnit(u)}>
@@ -224,6 +269,12 @@ export default function AddPrice({ db, update, push, pop, view }) {
               </div>
             </label>
           </div>
+
+          {pkg && effPrice > 0 && qtyNum > 0 && (
+            <p className="muted small" style={{ marginTop: -6, marginBottom: 10 }}>
+              = ${effPrice.toFixed(2)} for {qtyNum} {unit} → ${(effPrice / qtyNum).toFixed(2)}/{unit}
+            </p>
+          )}
 
           {byPiece && (
             <p className="muted small" style={{ marginTop: -6, marginBottom: 10 }}>
