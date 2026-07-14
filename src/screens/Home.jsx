@@ -38,19 +38,19 @@ export default function Home({ db, push }) {
         <h1>🥩 Meat deals</h1>
       </div>
 
-      <div className="seg" style={{ marginBottom: 8 }}>
+      <div className="chips" style={{ marginBottom: 8 }}>
         {RATING_KEYS.map((r) => (
           <button
             key={r}
             className={ratingsOn.has(r) ? 'on' : ''}
             onClick={() => toggle(ratingsOn, setRatingsOn, r)}
           >
-            {RATING[r].label}
+            {RATING[r].label.replace(' deal', '')}
           </button>
         ))}
       </div>
       {dealStores.length > 1 && (
-        <div className="seg" style={{ marginBottom: 8 }}>
+        <div className="chips" style={{ marginBottom: 8 }}>
           {dealStores.map((s) => (
             <button
               key={s.id}

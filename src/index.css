@@ -160,6 +160,18 @@ input:focus, select:focus { border-color: var(--accent); }
   background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
 }
 
+/* compact filter chips (Home) — single scrollable line */
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chips button {
+  flex: 0 0 auto; padding: 6px 12px; font-size: 13px; font-weight: 600;
+  white-space: nowrap; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card); color: var(--muted); cursor: pointer;
+}
+.chips button.on {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+}
+
 /* ---------- buttons ---------- */
 .btn {
   display: block; width: 100%; padding: 16px; font-size: 17px; font-weight: 700;
