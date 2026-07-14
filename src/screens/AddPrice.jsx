@@ -15,23 +15,27 @@ export default function AddPrice({ db, update, push, pop, view }) {
 
   // Opened from the Items tab with a product (or a search term) already chosen
   const presetItem = db.items.find((i) => i.id === view.presetItemId) ?? null
-  const presetLast = presetItem ? itemRecords(db, presetItem.id)[0] : null
+  // Edit mode: opened from a product's History to fix an existing record.
+  const editRec = db.records.find((r) => r.id === view.editRecordId) ?? null
+  const presetLast = editRec ?? (presetItem ? itemRecords(db, presetItem.id)[0] : null)
 
   const [query, setQuery] = useState(presetItem?.name ?? view.presetQuery ?? '')
   const [item, setItem] = useState(presetItem) // existing item selected
   const [creating, setCreating] = useState(!presetItem && !!view.presetQuery)
 
   // form state
-  const [price, setPrice] = useState('')
-  const [qty, setQty] = useState(() => (presetItem ? String(suggestedQty(db, presetItem, view.storeId)) : '1'))
+  const [price, setPrice] = useState(editRec ? String(editRec.price) : '')
+  const [qty, setQty] = useState(() =>
+    editRec ? String(editRec.qty) : presetItem ? String(suggestedQty(db, presetItem, view.storeId)) : '1',
+  )
   const [unit, setUnit] = useState(() =>
-    presetItem ? suggestedUnit(db, presetItem, view.storeId) : store?.defaultUnit ?? 'lb',
+    editRec ? editRec.unit : presetItem ? suggestedUnit(db, presetItem, view.storeId) : store?.defaultUnit ?? 'lb',
   )
   const [category, setCategory] = useState(presetItem?.category ?? 'other')
-  const [processing, setProcessing] = useState('natural') // new meat items only
+  const [processing, setProcessing] = useState(presetItem?.processing ?? 'natural')
   // Meat package entry: total package price + weight (− optional "$x off"
   // sticker at Costco), for packs with no per-kg/per-lb label price.
-  const [pkgMode, setPkgMode] = useState(false)
+  const [pkgMode, setPkgMode] = useState(!!editRec && presetItem?.category === 'meat' && editRec.qty !== 1)
   const [discount, setDiscount] = useState('')
   const [frozen, setFrozen] = useState(presetLast?.frozen ?? false)
   const [bones, setBones] = useState(presetLast?.bones ?? false)
@@ -82,6 +86,23 @@ export default function AddPrice({ db, update, push, pop, view }) {
   function save() {
     if (!valid) return
     let itemId = item?.id
+    if (editRec) {
+      update((d) => {
+        const rec = d.records.find((r) => r.id === editRec.id)
+        const it = d.items.find((i) => i.id === itemId)
+        const meat = category === 'meat'
+        it.category = category
+        it.processing = meat ? processing : null
+        rec.price = pkg ? Math.round(effPrice * 100) / 100 : priceNum
+        rec.qty = qtyNum
+        rec.unit = unit
+        rec.frozen = meat ? frozen : null
+        rec.bones = meat ? bones : null
+        rec.skin = meat ? skin : null
+      })
+      pop()
+      return
+    }
     update((d) => {
       if (!itemId) {
         itemId = uid('i')
@@ -132,7 +153,10 @@ export default function AddPrice({ db, update, push, pop, view }) {
     <div className="screen">
       <div className="topbar">
         <button className="back" onClick={pop}>‹</button>
-        <h1 style={{ color: store.color }}>{store.name}</h1>
+        <div>
+          <h1 style={{ color: store.color }}>{store.name}</h1>
+          {editRec && <span className="muted small">editing price from {new Date(editRec.ts).toLocaleDateString()}</span>}
+        </div>
       </div>
 
       <label className="field">
@@ -179,7 +203,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
 
       {formVisible && (
         <>
-          {creating && (
+          {(creating || editRec) && (
             <label className="field">
               <span className="lbl">Category</span>
               <div className="seg">
@@ -197,7 +221,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
             </label>
           )}
 
-          {creating && isMeat && (
+          {(creating || editRec) && isMeat && (
             <label className="field">
               <span className="lbl">Processing</span>
               <div className="seg">
@@ -347,7 +371,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
           )}
 
           <button className="btn" disabled={!valid} onClick={save} style={{ marginTop: 8 }}>
-            Save price
+            {editRec ? 'Save changes' : 'Save price'}
           </button>
         </>
       )}

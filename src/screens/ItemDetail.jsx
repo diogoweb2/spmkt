@@ -3,14 +3,13 @@ import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
   variantKey, variantLabel, flyerInfo, isComparable,
 } from '../lib/analysis'
-import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel, KIND_UNITS, unitKind } from '../lib/units'
+import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel } from '../lib/units'
 import MonthlyChart from '../components/MonthlyChart'
 import UnitToggle from '../components/UnitToggle'
 
-export default function ItemDetail({ db, update, pop, view }) {
+export default function ItemDetail({ db, update, push, pop, view }) {
   const item = db.items.find((i) => i.id === view.itemId)
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [edit, setEdit] = useState(null) // { id, price, qty, unit }
   const [pickedVariant, setPickedVariant] = useState(view.variant ?? null)
   const [compareSel, setCompareSel] = useState([])
   if (!item) return null
@@ -187,60 +186,12 @@ export default function ItemDetail({ db, update, pop, view }) {
             const norm = recordNorm(r, item)
             const pct = norm != null && worst && worst > 0 ? norm / worst : 1
             const cls = best != null && norm <= best * 1.02 ? '' : norm >= worst * 0.98 && recs.length > 1 ? 'worst' : 'mid'
-            if (edit?.id === r.id) {
-              const priceNum = parseFloat(edit.price)
-              const qtyNum = parseFloat(edit.qty)
-              const editValid = priceNum > 0 && qtyNum > 0
-              return (
-                <div key={r.id} style={{ padding: '10px 0' }}>
-                  <div className="lbl" style={{ marginBottom: 6 }}>Edit · {store?.name ?? '?'} · {new Date(r.ts).toLocaleDateString()}</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <label className="field" style={{ flex: 1 }}>
-                      <span className="lbl">Price $</span>
-                      <input type="number" inputMode="decimal" step="0.01" min="0" value={edit.price}
-                        onChange={(e) => setEdit({ ...edit, price: e.target.value })} />
-                    </label>
-                    <label className="field" style={{ flex: 1 }}>
-                      <span className="lbl">Quantity</span>
-                      <input type="number" inputMode="decimal" step="any" min="0" value={edit.qty}
-                        onChange={(e) => setEdit({ ...edit, qty: e.target.value })} />
-                    </label>
-                  </div>
-                  <div className="seg" style={{ marginBottom: 10 }}>
-                    {(KIND_UNITS[unitKind(r.unit)] ?? [r.unit]).map((u) => (
-                      <button key={u} type="button" className={edit.unit === u ? 'on' : ''}
-                        onClick={() => setEdit({ ...edit, unit: u })}>
-                        {u}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn ghost small" onClick={() => setEdit(null)}>Cancel</button>
-                    <button
-                      className="btn small"
-                      disabled={!editValid}
-                      onClick={() => {
-                        update((d) => {
-                          const rec = d.records.find((x) => x.id === r.id)
-                          rec.price = priceNum
-                          rec.qty = qtyNum
-                          rec.unit = edit.unit
-                        })
-                        setEdit(null)
-                      }}
-                    >
-                      Save
-                    </button>
-                  </div>
-                </div>
-              )
-            }
             return (
               <div key={r.id} className="row" style={{ cursor: 'default' }}>
                 <button
                   className="grow"
                   style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0, cursor: 'pointer' }}
-                  onClick={() => setEdit({ id: r.id, price: String(r.price), qty: String(r.qty), unit: r.unit })}
+                  onClick={() => push({ name: 'addPrice', storeId: r.storeId, presetItemId: item.id, editRecordId: r.id })}
                   aria-label="Edit record"
                 >
                   <div className="title small" style={{ fontSize: 14 }}>
