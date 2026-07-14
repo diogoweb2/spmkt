@@ -48,7 +48,8 @@ Supermarkets increasingly price meat by piece with no weight printed ("boneless 
 
 ### Simple meat entry (label price) & Costco package discounts
 - **Label mode (default for meat in AddPrice):** the user types the price straight off the shelf label as **$/kg or $/lb** — no quantity field is shown, qty is saved as 1. Unit choices are `kg / lb / un`; choosing `un` reveals a "Pieces" field (by-piece entry, above).
-- **Package mode (Costco only):** Costco meat packages often carry a "−$x off" sticker on a package priced by total weight. When the store's name contains "costco" (case-insensitive) and the item is meat, a "Price type" toggle appears: 🏷️ Label price / 📦 Package −$ off. Package mode asks for **package total price, discount sticker ($ off), and weight** (kg/lb/g/oz); the saved record is a normal weight record with `price = total − discount` (rounded to cents) and `qty` = the weight. A live caption shows the effective $/unit before saving.
+- **Package mode (any store, meat only):** for packages priced by total weight with no per-kg/per-lb label. For meat, a "Price type" toggle appears: 🏷️ Label price / 📦 Package price. Package mode asks for **package total price and weight** (kg/lb/g/oz); at stores whose name contains "costco" (case-insensitive) it also asks for a **discount sticker ($ off)** — Costco meat packages often carry a "−$x off" sticker. The saved record is a normal weight record with `price = total − discount` (rounded to cents) and `qty` = the weight. A live caption shows the effective $/unit before saving.
+- **Processing (new meat items):** when creating a new meat item, a 🥩 Natural / 🌭 Ultra-processed toggle sets `processing` (default natural).
 
 - Category `meat` adds three toggles when logging: **Fresh/Frozen**, **Bones Y/N**, **Skin Y/N**.
 - The triple **(skin, bones, frozen) is a "variant"** — each variant is treated as a separate product: its own history, verdicts, store comparison, monthly chart, and list row.
@@ -151,7 +152,7 @@ Code: `src/lib/meat.js` (grouping + ratings), `scripts/flyers/classify-meat.mjs`
 
 ### Item classification fields (meat items only)
 - `meatType`: `beef` \| `pork` \| `chicken` \| `fish` \| `other` (fish = all seafood; turkey/lamb/duck/mixed → `other`). `null` until classified.
-- `processing`: `natural` (whole/raw cuts: steaks, roasts, ground, raw pieces, fillets) or `ultra` (ultra-processed/prepared: nuggets, breaded, sausages, hot dogs, bacon, deli, burgers, marinated ready-meals, canned). **Manually added meat items default to `natural`**; flyer-created items start `null`.
+- `processing`: `natural` (whole/raw cuts: steaks, roasts, ground, raw pieces, fillets) or `ultra` (ultra-processed/prepared: nuggets, breaded, sausages, hot dogs, bacon, deli, burgers, marinated ready-meals, canned). **Manually added meat items get `processing` from the AddPrice toggle (default `natural`)**; flyer-created items start `null`.
 - `market`: `{ excellent, good, avg, updatedAt }` — Toronto supermarket price thresholds in **CAD $/lb, using prices since Jan 2026 only** (meat prices rose sharply after the Iran war; older prices are misleading), researched by LLM web search (we don't yet have enough own history; may later be replaced by our own data). `excellent ≤ good ≤ avg` is enforced.
 - On merge (§9), the first selected item that has each field wins.
 

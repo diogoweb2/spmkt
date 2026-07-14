@@ -28,7 +28,9 @@ export default function AddPrice({ db, update, push, pop, view }) {
     presetItem ? suggestedUnit(db, presetItem, view.storeId) : store?.defaultUnit ?? 'lb',
   )
   const [category, setCategory] = useState(presetItem?.category ?? 'other')
-  // Costco-only meat entry: total package price + weight − "$x off" sticker
+  const [processing, setProcessing] = useState('natural') // new meat items only
+  // Meat package entry: total package price + weight (− optional "$x off"
+  // sticker at Costco), for packs with no per-kg/per-lb label price.
   const [pkgMode, setPkgMode] = useState(false)
   const [discount, setDiscount] = useState('')
   const [frozen, setFrozen] = useState(presetLast?.frozen ?? false)
@@ -67,8 +69,8 @@ export default function AddPrice({ db, update, push, pop, view }) {
   const formVisible = item || creating
   const isMeat = category === 'meat'
   const isCostco = /costco/i.test(store?.name ?? '')
-  // Package mode is Costco-meat only; the toggle state is ignored elsewhere.
-  const pkg = pkgMode && isMeat && isCostco
+  // Package mode is meat-only; the toggle state is ignored elsewhere.
+  const pkg = pkgMode && isMeat
   // Meat label mode: price straight off the label ($/kg or $/lb), qty is 1.
   const labelMode = isMeat && !pkg
   const priceNum = parseFloat(price)
@@ -90,10 +92,10 @@ export default function AddPrice({ db, update, push, pop, view }) {
           kind: unitKind(unit),
           defaultUnit: unit,
           annualQty: null,
-          // Meat classification: manual items default to natural; the weekly
+          // Meat classification: the user picks natural/ultra; the weekly
           // LLM pass fills meatType and market thresholds (BUSINESS_RULES §13).
           meatType: null,
-          processing: category === 'meat' ? 'natural' : null,
+          processing: category === 'meat' ? processing : null,
           market: null,
         })
       }
@@ -195,7 +197,21 @@ export default function AddPrice({ db, update, push, pop, view }) {
             </label>
           )}
 
-          {isMeat && isCostco && (
+          {creating && isMeat && (
+            <label className="field">
+              <span className="lbl">Processing</span>
+              <div className="seg">
+                <button type="button" className={processing === 'natural' ? 'on' : ''} onClick={() => setProcessing('natural')}>
+                  🥩 Natural
+                </button>
+                <button type="button" className={processing === 'ultra' ? 'on' : ''} onClick={() => setProcessing('ultra')}>
+                  🌭 Ultra-processed
+                </button>
+              </div>
+            </label>
+          )}
+
+          {isMeat && (
             <label className="field">
               <span className="lbl">Price type</span>
               <div className="seg">
@@ -203,7 +219,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
                   🏷️ Label price
                 </button>
                 <button type="button" className={pkgMode ? 'on' : ''} onClick={() => setPkgMode(true)}>
-                  📦 Package −$ off
+                  📦 Package price
                 </button>
               </div>
             </label>
@@ -226,7 +242,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
             </div>
           </label>
 
-          {pkg && (
+          {pkg && isCostco && (
             <label className="field">
               <span className="lbl">Discount sticker</span>
               <div className="price-input">
