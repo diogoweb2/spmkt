@@ -99,6 +99,12 @@ export default function Home({ db, push }) {
         ))}
       </Chips>
       <Chips style={{ marginBottom: 8 }}>
+        <button
+          aria-label="Clear meat type selection"
+          onClick={() => setTypesOff(new Set(MEAT_TYPES))}
+        >
+          ✕
+        </button>
         {MEAT_TYPES.filter((t) => groups[t]?.length).map((t) => (
           <button
             key={t}
