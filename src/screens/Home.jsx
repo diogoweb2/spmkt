@@ -41,7 +41,7 @@ export default function Home({ db, push }) {
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
   const [storesOff, setStoresOff] = useState(() => new Set())
   const [typesOff, setTypesOff] = useState(() => new Set())
-  const [procOff, setProcOff] = useState(() => new Set())
+  const [proc, setProc] = useState('all') // 'all' | 'natural' | 'ultra'
 
   const dealStores = useMemo(() => {
     const map = new Map()
@@ -59,7 +59,7 @@ export default function Home({ db, push }) {
   // Items with no market data (rating null) always pass the rating filter.
   const show = (d) =>
     !storesOff.has(d.store.id) &&
-    !procOff.has(d.ultra ? 'ultra' : 'natural') &&
+    (proc === 'all' || (proc === 'ultra') === d.ultra) &&
     (d.rating == null || ratingsOn.has(d.rating))
 
   // One section per meat type for natural items, followed by a separate
@@ -102,13 +102,13 @@ export default function Home({ db, push }) {
             {MEAT_TYPE_LABEL[t]}
           </button>
         ))}
-        {['natural', 'ultra'].map((p) => (
+        {['all', 'natural', 'ultra'].map((p) => (
           <button
             key={p}
-            className={procOff.has(p) ? '' : 'on'}
-            onClick={() => toggle(procOff, setProcOff, p)}
+            className={proc === p ? 'on' : ''}
+            onClick={() => setProc(p)}
           >
-            {PROCESSING_LABEL[p]}
+            {p === 'all' ? 'All' : PROCESSING_LABEL[p]}
           </button>
         ))}
       </Chips>
