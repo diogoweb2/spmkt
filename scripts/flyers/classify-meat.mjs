@@ -11,6 +11,8 @@
 // refreshes stale market numbers and classifies newly imported and manually
 // added items. Can also be run standalone:
 //   node scripts/flyers/classify-meat.mjs          # missing/stale items only
+//   node scripts/flyers/classify-meat.mjs --new    # items with no market data only
+//                                                    (npm run classify:new — after adding items manually)
 //   node scripts/flyers/classify-meat.mjs --all    # reclassify every meat item
 //   node scripts/flyers/classify-meat.mjs --dry-run
 
@@ -35,12 +37,14 @@ Products: ${JSON.stringify(names)}`
 
 // Classifies meat items missing meatType/processing/market and refreshes
 // market thresholds older than STALE_MS. Returns the number of items updated.
-export async function classifyMeat(env, { all = false, dryRun = false } = {}) {
+export async function classifyMeat(env, { all = false, newOnly = false, dryRun = false } = {}) {
   const { db, save } = await openFamilyDoc(env)
   if (!db) throw new Error('family db doc not found')
   const meat = (db.items ?? []).filter((i) => i.category === 'meat')
   const todo = all
     ? meat
+    : newOnly
+    ? meat.filter((i) => !i.market) // manually added items awaiting deal thresholds
     : meat.filter(
         (i) => !i.meatType || !i.processing || !i.market || Date.now() - (i.market.updatedAt ?? 0) > STALE_MS,
       )
@@ -88,6 +92,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     await classifyMeat(loadEnv(), {
       all: process.argv.includes('--all'),
+      newOnly: process.argv.includes('--new'),
       dryRun: process.argv.includes('--dry-run'),
     })
   } catch (err) {

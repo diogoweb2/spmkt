@@ -161,7 +161,7 @@ Code: `src/lib/meat.js` (grouping + ratings), `scripts/flyers/classify-meat.mjs`
 - On merge (§9), the first selected item that has each field wins.
 
 ### Classification pass (`classify-meat.mjs`)
-- Runs automatically at the **end of every weekly flyer import** (`run.mjs`), and can run standalone (`--all` reclassifies everything, `--dry-run` doesn't save).
+- Runs automatically at the **end of every weekly flyer import** (`run.mjs`), and can run standalone (`--all` reclassifies everything, `--new` / `npm run classify:new` classifies only items with no `market` data yet — for right after adding items manually, `--dry-run` doesn't save).
 - Classifies meat items with any field missing and refreshes `market` older than 6 days, in one Claude (headless, WebSearch-enabled) call; matches results back by case-insensitive name and validates enums/thresholds before saving.
 
 ### Meat deals section (Home)
