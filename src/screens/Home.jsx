@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
-import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, RATING } from '../lib/meat'
+import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 
 // Home = current meat deals, grouped Beef/Pork/Chicken/Fish; ultra-processed
 // items get their own "<Type> · ultra-processed" section after the natural
@@ -40,6 +40,8 @@ export default function Home({ db, push }) {
   const groups = useMemo(() => meatDeals(db), [db])
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
   const [storesOff, setStoresOff] = useState(() => new Set())
+  const [typesOff, setTypesOff] = useState(() => new Set())
+  const [procOff, setProcOff] = useState(() => new Set())
 
   const dealStores = useMemo(() => {
     const map = new Map()
@@ -56,11 +58,14 @@ export default function Home({ db, push }) {
 
   // Items with no market data (rating null) always pass the rating filter.
   const show = (d) =>
-    !storesOff.has(d.store.id) && (d.rating == null || ratingsOn.has(d.rating))
+    !storesOff.has(d.store.id) &&
+    !procOff.has(d.ultra ? 'ultra' : 'natural') &&
+    (d.rating == null || ratingsOn.has(d.rating))
 
   // One section per meat type for natural items, followed by a separate
   // "<Type> · ultra-processed" section when the type has ultra items.
   const sections = MEAT_TYPES.flatMap((t) => {
+    if (typesOff.has(t)) return []
     const list = (groups[t] ?? []).filter(show)
     const natural = list.filter((d) => !d.ultra)
     const ultra = list.filter((d) => d.ultra)
@@ -84,6 +89,26 @@ export default function Home({ db, push }) {
             onClick={() => toggle(ratingsOn, setRatingsOn, r)}
           >
             {RATING[r].label.replace(' deal', '')}
+          </button>
+        ))}
+      </Chips>
+      <Chips style={{ marginBottom: 8 }}>
+        {MEAT_TYPES.filter((t) => groups[t]?.length).map((t) => (
+          <button
+            key={t}
+            className={typesOff.has(t) ? '' : 'on'}
+            onClick={() => toggle(typesOff, setTypesOff, t)}
+          >
+            {MEAT_TYPE_LABEL[t]}
+          </button>
+        ))}
+        {['natural', 'ultra'].map((p) => (
+          <button
+            key={p}
+            className={procOff.has(p) ? '' : 'on'}
+            onClick={() => toggle(procOff, setProcOff, p)}
+          >
+            {PROCESSING_LABEL[p]}
           </button>
         ))}
       </Chips>
