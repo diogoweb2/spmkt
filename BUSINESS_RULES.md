@@ -20,7 +20,7 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 | **Note** (bug/idea) | `id, type, text, done, ts` | `type`: `bug` \| `idea`. Personal todo list, see §11. |
 | **Ignored** | `id, name, ts` | A product type the user never wants imported, see §9. |
 
-- **Prices are append-only.** Updating a price creates a new record; history is never overwritten. Records can be individually deleted (with confirmation).
+- **Prices are append-only.** Logging a price creates a new record; history is never overwritten. Records can be individually deleted (with confirmation). Exception: tapping a record in the product's History opens an inline editor to **fix its price, quantity, or unit in place** (correcting a typo, not logging a new price); unit choices stay within the record's unit kind, and the date/store/variant are not editable.
 - **Auth**: one shared family password. The app signs everyone into a single Firebase Auth email/password account (`family@smartprice.app`); the password is stored hashed in Firebase Auth and is changed from the Firebase console. Same account ⇒ one shared household db. Asked once per device (Firebase Auth session persists); Settings offers "Lock app". The phase-1 PIN is retired (`pinHash` dropped during migration).
 
 ## 2. Units & normalization
