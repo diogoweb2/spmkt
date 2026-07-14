@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
 import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
+import PhotoLink from '../components/PhotoLink'
 
 // Home = current meat deals, grouped Beef/Pork/Chicken/Fish; ultra-processed
 // items get their own "<Type> · ultra-processed" section after the natural
@@ -169,7 +170,7 @@ export default function Home({ db, push }) {
             {list.map((d) => (
               <button key={d.item.id} className="row" onClick={() => push({ name: 'item', itemId: d.item.id })}>
                 <div className="grow">
-                  <div className="title">{d.item.name}</div>
+                  <div className="title">{d.item.name}<PhotoLink name={d.item.name} /></div>
                   <div className="sub">
                     cheapest @ {d.store.name}
                     {d.rec.validUntil ? ` · until ${new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}

@@ -7,6 +7,7 @@ import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnit
 import { effectivePrice } from '../lib/cashback'
 import MonthlyChart from '../components/MonthlyChart'
 import UnitToggle from '../components/UnitToggle'
+import PhotoLink from '../components/PhotoLink'
 
 export default function ItemDetail({ db, update, push, pop, view }) {
   const item = db.items.find((i) => i.id === view.itemId)
@@ -71,14 +72,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
             })()}
           </h1>
           <span className="muted small">
-            prices shown per {displayUnitLabel(item.kind, wu)} ·{' '}
-            <a
-              href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.name)}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              📷 photos
-            </a>
+            prices shown per {displayUnitLabel(item.kind, wu)} · <PhotoLink name={item.name} />
           </span>
         </div>
         {item.kind === 'weight' && <UnitToggle db={db} update={update} />}

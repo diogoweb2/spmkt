@@ -5,6 +5,7 @@ import { effectivePrice } from '../lib/cashback'
 import { canMerge, mergeItems, suggestName, targetUnit } from '../lib/merge'
 import { ignoreItems } from '../lib/ignore'
 import UnitToggle from '../components/UnitToggle'
+import PhotoLink from '../components/PhotoLink'
 
 export default function Items({ db, update, push }) {
   const [q, setQ] = useState('')
@@ -239,6 +240,7 @@ export default function Items({ db, update, push }) {
                 <div className="title" style={{ whiteSpace: 'normal' }}>
                   {comparing || merging ? (isSel ? '☑️ ' : '⬜ ') : ''}
                   {item.name}
+                  {!comparing && !merging && <PhotoLink name={item.name} />}
                   {label && <span className="muted small"> ({label})</span>}
                   {(() => {
                     const fi = flyerInfo(recs[0])
