@@ -201,10 +201,18 @@ export default function AddPrice({ db, update, push, pop, view }) {
             <label className="field">
               <span className="lbl">Processing</span>
               <div className="seg">
-                <button type="button" className={processing === 'natural' ? 'on' : ''} onClick={() => setProcessing('natural')}>
+                <button
+                  type="button"
+                  className={processing === 'natural' ? 'on' : ''}
+                  onClick={() => { setProcessing('natural'); setFrozen(false) }}
+                >
                   🥩 Natural
                 </button>
-                <button type="button" className={processing === 'ultra' ? 'on' : ''} onClick={() => setProcessing('ultra')}>
+                <button
+                  type="button"
+                  className={processing === 'ultra' ? 'on' : ''}
+                  onClick={() => { setProcessing('ultra'); setFrozen(true) }}
+                >
                   🌭 Ultra-processed
                 </button>
               </div>

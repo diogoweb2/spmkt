@@ -49,7 +49,7 @@ Supermarkets increasingly price meat by piece with no weight printed ("boneless 
 ### Simple meat entry (label price) & Costco package discounts
 - **Label mode (default for meat in AddPrice):** the user types the price straight off the shelf label as **$/kg or $/lb** — no quantity field is shown, qty is saved as 1. Unit choices are `kg / lb / un`; choosing `un` reveals a "Pieces" field (by-piece entry, above).
 - **Package mode (any store, meat only):** for packages priced by total weight with no per-kg/per-lb label. For meat, a "Price type" toggle appears: 🏷️ Label price / 📦 Package price. Package mode asks for **package total price and weight** (kg/lb/g/oz); at stores whose name contains "costco" (case-insensitive) it also asks for a **discount sticker ($ off)** — Costco meat packages often carry a "−$x off" sticker. The saved record is a normal weight record with `price = total − discount` (rounded to cents) and `qty` = the weight. A live caption shows the effective $/unit before saving.
-- **Processing (new meat items):** when creating a new meat item, a 🥩 Natural / 🌭 Ultra-processed toggle sets `processing` (default natural).
+- **Processing (new meat items):** when creating a new meat item, a 🥩 Natural / 🌭 Ultra-processed toggle sets `processing` (default natural). Picking Ultra-processed also defaults Fresh/Frozen to **frozen** (Natural resets it to fresh); the user can still change it.
 
 - Category `meat` adds three toggles when logging: **Fresh/Frozen**, **Bones Y/N**, **Skin Y/N**.
 - The triple **(skin, bones, frozen) is a "variant"** — each variant is treated as a separate product: its own history, verdicts, store comparison, monthly chart, and list row.
