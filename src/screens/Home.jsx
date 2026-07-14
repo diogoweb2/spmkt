@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
 import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import PhotoLink from '../components/PhotoLink'
+import CompareReport from '../components/CompareReport'
 
 // Home = current meat deals, grouped Beef/Pork/Chicken/Fish; ultra-processed
 // items get their own "<Type> · ultra-processed" section after the natural
@@ -44,6 +45,12 @@ export default function Home({ db, push }) {
   const [typesOff, setTypesOff] = useState(() => new Set())
   const [proc, setProc] = useState('all') // cycles all -> natural -> ultra
   const [sort, setSort] = useState('price') // 'price' | 'deal' | 'name'
+  // Long-press a deal row to enter compare mode (same ⚖️ tool as the Items tab);
+  // tap more rows to select, tray at the bottom runs the report.
+  const [comparing, setComparing] = useState(false)
+  const [selected, setSelected] = useState([]) // item ids
+  const [report, setReport] = useState(false)
+  const press = useRef({ timer: null, long: false })
 
   const dealStores = useMemo(() => {
     const map = new Map()
@@ -85,17 +92,69 @@ export default function Home({ db, push }) {
     return out
   })
 
+  const allDeals = MEAT_TYPES.flatMap((t) => groups[t] ?? [])
+  const selectedDeals = allDeals.filter((d) => selected.includes(d.item.id))
+  const compareKind = selectedDeals[0]?.item.kind ?? null
+  // CompareReport rows: variant null = compare across all the item's records
+  const compareRows = selectedDeals.map((d) => ({ item: d.item, variant: null, label: '', key: d.item.id }))
+
+  function holdStart(d) {
+    if (comparing) return
+    press.current.long = false
+    press.current.timer = setTimeout(() => {
+      press.current.long = true
+      setComparing(true)
+      setSelected([d.item.id])
+      navigator.vibrate?.(20)
+    }, 450)
+  }
+
+  function holdEnd() {
+    clearTimeout(press.current.timer)
+  }
+
+  function toggleSelect(d) {
+    setSelected((sel) =>
+      sel.includes(d.item.id) ? sel.filter((id) => id !== d.item.id) : [...sel, d.item.id],
+    )
+  }
+
+  function exitCompare() {
+    setComparing(false)
+    setSelected([])
+    setReport(false)
+  }
+
+  if (report && compareRows.length >= 2) {
+    return (
+      <CompareReport
+        db={db}
+        rows={compareRows}
+        onBack={() => setReport(false)}
+        onDone={exitCompare}
+      />
+    )
+  }
+
   return (
-    <div className="screen">
+    <div className="screen" style={comparing ? { paddingBottom: 170 } : undefined}>
       <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1>🥩 Meat deals</h1>
-        <button
-          className="btn small ghost"
-          onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
-        >
-          {proc === 'all' ? 'All' : PROCESSING_LABEL[proc]}
-        </button>
+        <h1>{comparing ? 'Pick items ⚖️' : '🥩 Meat deals'}</h1>
+        {!comparing && (
+          <button
+            className="btn small ghost"
+            onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
+          >
+            {proc === 'all' ? 'All' : PROCESSING_LABEL[proc]}
+          </button>
+        )}
       </div>
+
+      {comparing && (
+        <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
+          Tap the deals you want to compare.
+        </p>
+      )}
 
       <Chips style={{ marginBottom: 8 }}>
         {RATING_KEYS.map((r) => (
@@ -167,10 +226,34 @@ export default function Home({ db, push }) {
         <div key={key} style={{ marginTop: 10 }}>
           <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>
           <div className="card list" style={{ padding: '2px 14px' }}>
-            {list.map((d) => (
-              <button key={d.item.id} className="row" onClick={() => push({ name: 'item', itemId: d.item.id })}>
+            {list.map((d) => {
+              const isSel = selected.includes(d.item.id)
+              const disabled = comparing && compareKind && d.item.kind !== compareKind && !isSel
+              return (
+              <button
+                key={d.item.id}
+                className="row"
+                style={{
+                  ...(isSel ? { background: 'var(--accent-soft)', borderRadius: 10, padding: '13px 8px' } : null),
+                  ...(disabled ? { opacity: 0.35 } : null),
+                }}
+                onPointerDown={() => holdStart(d)}
+                onPointerUp={holdEnd}
+                onPointerLeave={holdEnd}
+                onPointerCancel={holdEnd}
+                onContextMenu={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (press.current.long) { press.current.long = false; return }
+                  if (comparing) return !disabled && toggleSelect(d)
+                  push({ name: 'item', itemId: d.item.id })
+                }}
+              >
                 <div className="grow">
-                  <div className="title">{d.item.name}<PhotoLink name={d.item.name} /></div>
+                  <div className="title">
+                    {comparing ? (isSel ? '☑️ ' : '⬜ ') : ''}
+                    {d.item.name}
+                    {!comparing && <PhotoLink name={d.item.name} />}
+                  </div>
                   <div className="sub">
                     cheapest @ {d.store.name}
                     {d.rec.validUntil ? ` · until ${new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
@@ -181,10 +264,33 @@ export default function Home({ db, push }) {
                   {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
                 </div>
               </button>
-            ))}
+              )
+            })}
           </div>
         </div>
       ))}
+
+      {comparing && (
+        <div className="compare-tray">
+          <div className="small" style={{ marginBottom: 8 }}>
+            {selectedDeals.length === 0 ? (
+              <span className="muted">Nothing selected yet.</span>
+            ) : (
+              selectedDeals.map((d) => (
+                <span key={d.item.id} className="badge lvl-first" style={{ marginRight: 6, marginBottom: 4, display: 'inline-block' }}>
+                  {d.item.name}
+                </span>
+              ))
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn ghost" onClick={exitCompare}>Cancel</button>
+            <button className="btn" disabled={selectedDeals.length < 2} onClick={() => setReport(true)}>
+              Compare {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

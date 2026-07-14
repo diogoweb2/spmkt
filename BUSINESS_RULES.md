@@ -94,6 +94,7 @@ Compared **only against other records of the same item + variant**, using normal
 ## 8. Multi-product comparison (⚖️ Compare)
 
 - Entry: "⚖️ Compare" button on the Items tab (visible when ≥ 2 items have records). User taps items to select (search allowed); tray at bottom shows selections; "Compare (n)" enabled at ≥ 2.
+- **Second entry on Home:** long-press a deal row (≈450 ms) to enter compare mode, then tap more rows to select; same tray + report. Home selection is per **item** (variant-agnostic: the report compares all the item's records, latest per store).
 - **Only same-kind products can be compared** (weight with weight, volume with volume); incompatible rows are dimmed and unselectable. Variants count as separate products.
 - **The report uses each store's LATEST price per product only — never older records.**
 - Report sections:
