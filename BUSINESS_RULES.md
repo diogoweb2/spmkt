@@ -119,6 +119,10 @@ Compared **only against other records of the same item + variant**, using normal
 - If the search has no exact match, an **"+ Add '<term>' with a price"** button creates the product and logs its first price in one flow.
 - If no current store is set, either action first asks "Where are you?" (store list); the choice is remembered.
 
+## 9b. Navigation & browser history
+
+- The app keeps a view stack (tabs reset it, detail screens push onto it). Every navigation is mirrored into browser history (`pushState`, hash = view name, e.g. `#item`), so the **browser/phone Back button navigates within the app** instead of leaving it; the in-app ‹ button triggers `history.back()` so both stay in sync.
+
 ## 10. Home & Location screens
 
 - **Home** (🏠 tab) is the **Meat deals** page (§13). When there are no qualifying deals it shows an empty state explaining deals come from the weekly flyer import.

@@ -16,6 +16,16 @@ export default function App() {
 
   useEffect(() => watchAuth(setUser), [])
 
+  // Browser-history integration: every push/tab change becomes a history
+  // entry (hash = view name), so the browser Back button navigates inside
+  // the app instead of leaving it.
+  useEffect(() => {
+    window.history.replaceState({ stack: [{ name: 'home' }] }, '', '#home')
+    const onPop = (e) => setStack(e.state?.stack ?? [{ name: 'home' }])
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   useEffect(() => {
     if (!user) {
       setDb(null)
@@ -65,9 +75,13 @@ export default function App() {
   }
 
   const view = stack[stack.length - 1]
-  const push = (v) => setStack((s) => [...s, v])
-  const pop = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s))
-  const goTab = (name) => setStack([{ name }])
+  const navigate = (next) => {
+    window.history.pushState({ stack: next }, '', `#${next[next.length - 1].name}`)
+    setStack(next)
+  }
+  const push = (v) => navigate([...stack, v])
+  const pop = () => (stack.length > 1 ? window.history.back() : undefined)
+  const goTab = (name) => navigate([{ name }])
 
   const props = { db, update, push, pop, view }
 
