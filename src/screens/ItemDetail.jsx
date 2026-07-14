@@ -70,7 +70,16 @@ export default function ItemDetail({ db, update, push, pop, view }) {
               )
             })()}
           </h1>
-          <span className="muted small">prices shown per {displayUnitLabel(item.kind, wu)}</span>
+          <span className="muted small">
+            prices shown per {displayUnitLabel(item.kind, wu)} ·{' '}
+            <a
+              href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.name)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              📷 photos
+            </a>
+          </span>
         </div>
         {item.kind === 'weight' && <UnitToggle db={db} update={update} />}
       </div>
