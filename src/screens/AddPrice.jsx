@@ -3,6 +3,7 @@ import { uid } from '../lib/db'
 import { suggestedUnit, suggestedQty, itemRecords } from '../lib/analysis'
 import { KIND_UNITS, unitKind } from '../lib/units'
 import { guessMeatType } from '../lib/meat'
+import { cashbackRate } from '../lib/cashback'
 
 const CATEGORIES = [
   { id: 'meat', label: '🥩 Meat' },
@@ -83,6 +84,9 @@ export default function AddPrice({ db, update, push, pop, view }) {
   const effPrice = priceNum - discountNum
   const qtyNum = labelMode && unit !== 'un' ? 1 : parseFloat(qty)
   const valid = formVisible && effPrice > 0 && qtyNum > 0 && (item || query.trim())
+  // Shelf price is what gets saved; cashback is applied at display/compare
+  // time everywhere else, so preview the effective price here too.
+  const cbRate = cashbackRate(db, store)
 
   function save() {
     if (!valid) return
@@ -323,6 +327,13 @@ export default function AddPrice({ db, update, push, pop, view }) {
           {pkg && effPrice > 0 && qtyNum > 0 && (
             <p className="muted small" style={{ marginTop: -6, marginBottom: 10 }}>
               = ${effPrice.toFixed(2)} for {qtyNum} {unit} → ${(effPrice / qtyNum).toFixed(2)}/{unit}
+            </p>
+          )}
+
+          {cbRate > 0 && effPrice > 0 && qtyNum > 0 && (
+            <p className="muted small" style={{ marginTop: -6, marginBottom: 10 }}>
+              💳 after {(cbRate * 100).toFixed(1).replace('.0', '')}% cashback: $
+              {((effPrice / qtyNum) * (1 - cbRate)).toFixed(2)}/{unit} — compared this way everywhere
             </p>
           )}
 

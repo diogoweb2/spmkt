@@ -39,8 +39,8 @@ Priority order: last unit/qty used for **this item at this store** → last unit
 ### Card cashback (`src/lib/cashback.js`)
 - Groceries are paid by card with cashback, so the **effective price is lower than the shelf price**: **5% (Amex)** at Metro, Food Basics, Sobeys, FreshCo, Longo's, Whole Foods Market and Farm Boy (matched loosely on the store name), **1.5% (Mastercard)** at every other store.
 - When enabled (default), the cashback is baked into `recordNorm` (when passed `db`) and into displayed record prices (`effectivePrice`): **all shown prices AND all comparison math** — verdicts, where-it's-cheapest, yearly impact, monthly chart, ⚖️ Compare, Home deal ratings vs `market` — run on effective prices. A 5% store can genuinely beat a 1.5% store on the same shelf price.
-- **Stored record prices stay raw** (the shelf price as entered/imported); the discount is applied at read time only. AddPrice inputs and its live captions are shelf prices.
-- Settings → "Card cashback 💳" toggle turns it off (`db.cashback = false`); rates and the Amex store list are fixed in code.
+- **Stored record prices stay raw** (the shelf price as entered/imported); the discount is applied at read time only. AddPrice inputs are shelf prices, and a live "💳 after x% cashback: $y/unit" caption shows how the entered price will be compared/displayed.
+- Two toggles for the same `db.cashback` flag: Settings → "Card cashback 💳", and a **global 💳 on/off pill** fixed above the bottom nav (visible on every screen) to quickly flip between shelf and effective prices. Rates and the Amex store list are fixed in code.
 
 ## 3. Meat variations
 

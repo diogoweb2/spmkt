@@ -8,6 +8,7 @@ import AddPrice from './screens/AddPrice'
 import ItemDetail from './screens/ItemDetail'
 import Items from './screens/Items'
 import Settings from './screens/Settings'
+import { cashbackEnabled } from './lib/cashback'
 
 export default function App() {
   const [user, setUser] = useState(undefined) // undefined = auth loading, null = signed out
@@ -85,8 +86,17 @@ export default function App() {
 
   const props = { db, update, push, pop, view }
 
+  const cb = cashbackEnabled(db)
+
   return (
     <div className="app">
+      <button
+        className={`cashback-pill${cb ? ' on' : ''}`}
+        title={cb ? 'Prices shown after card cashback — tap to see shelf prices' : 'Showing shelf prices — tap to apply card cashback'}
+        onClick={() => update((d) => { d.cashback = !cb })}
+      >
+        💳 {cb ? 'on' : 'off'}
+      </button>
       {view.name === 'home' && <Home {...props} />}
       {view.name === 'location' && <Location {...props} />}
       {view.name === 'addPrice' && <AddPrice {...props} />}
