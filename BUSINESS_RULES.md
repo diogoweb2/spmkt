@@ -30,7 +30,7 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 - An item's `kind` is fixed at creation; later entries for the item may only use units of the same kind.
 
 ### Display units (what the user sees)
-- Weight prices display as **$/lb or $/kg** (global toggle, top-right of Items list and product page; persisted as `db.displayWeightUnit`, default `lb`). Volume displays as **$/L**, count as **$/unit**.
+- Weight prices display as **$/lb or $/kg** (persisted as `db.displayWeightUnit`, default `lb`; toggled top-right of Items list and product page, or via the global ⚖️ pill next to the 💳 pill above the bottom nav). Volume displays as **$/L**, count as **$/unit**.
 - Display is conversion-only; all logic still runs on normalized per-100g/100ml values.
 
 ### Default unit & quantity when adding a price

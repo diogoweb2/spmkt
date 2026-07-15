@@ -87,16 +87,26 @@ export default function App() {
   const props = { db, update, push, pop, view }
 
   const cb = cashbackEnabled(db)
+  const wu = db.displayWeightUnit ?? 'lb'
 
   return (
     <div className="app">
-      <button
-        className={`cashback-pill${cb ? ' on' : ''}`}
-        title={cb ? 'Prices shown after card cashback — tap to see shelf prices' : 'Showing shelf prices — tap to apply card cashback'}
-        onClick={() => update((d) => { d.cashback = !cb })}
-      >
-        💳 {cb ? 'on' : 'off'}
-      </button>
+      <div className="global-pills">
+        <button
+          className="cashback-pill on"
+          title={`Weight prices shown per ${wu} — tap to switch to $/${wu === 'lb' ? 'kg' : 'lb'}`}
+          onClick={() => update((d) => { d.displayWeightUnit = wu === 'lb' ? 'kg' : 'lb' })}
+        >
+          ⚖️ $/{wu}
+        </button>
+        <button
+          className={`cashback-pill${cb ? ' on' : ''}`}
+          title={cb ? 'Prices shown after card cashback — tap to see shelf prices' : 'Showing shelf prices — tap to apply card cashback'}
+          onClick={() => update((d) => { d.cashback = !cb })}
+        >
+          💳 {cb ? 'on' : 'off'}
+        </button>
+      </div>
       {view.name === 'home' && <Home {...props} />}
       {view.name === 'location' && <Location {...props} />}
       {view.name === 'addPrice' && <AddPrice {...props} />}

@@ -233,9 +233,12 @@ input[type='range'] { width: 100%; accent-color: var(--accent); height: 32px; }
 .nav button.on { color: var(--accent); }
 .nav .ico { font-size: 22px; line-height: 1; }
 
-/* ---------- global cashback toggle ---------- */
-.cashback-pill {
+/* ---------- global toggles (cashback + $/lb-kg) ---------- */
+.global-pills {
   position: fixed; bottom: calc(72px + env(safe-area-inset-bottom)); right: 12px; z-index: 9;
+  display: flex; gap: 6px;
+}
+.cashback-pill {
   background: var(--card); color: var(--muted); border: 1.5px solid var(--line);
   border-radius: 999px; padding: 5px 11px; font-size: 12px; font-weight: 700;
   cursor: pointer; opacity: 0.55;
