@@ -291,6 +291,10 @@ export default function Home({ db, push }) {
           </div>
         </div>
       )}
+
+      <div className="small muted" style={{ textAlign: 'center', marginTop: 16, opacity: 0.6 }}>
+        Released {new Date(__BUILD_DATE__).toLocaleString()}
+      </div>
     </div>
   )
 }

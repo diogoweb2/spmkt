@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  define: { __BUILD_DATE__: JSON.stringify(new Date().toISOString()) },
   server: { port: 5180, strictPort: true, host: true },
   preview: { port: 5181, strictPort: true, host: true },
   plugins: [
