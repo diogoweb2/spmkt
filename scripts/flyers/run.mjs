@@ -162,9 +162,12 @@ async function insertProducts(products, storeName, env, validUntil) {
       item = { id: uid('i'), name: p.name.trim(), category: isMeat ? 'meat' : 'other', kind: kindOf(p.unit), defaultUnit: p.unit, annualQty: null, meatType: null, processing: null, market: null }
       db.items.push(item)
     }
-    // Meat sold by the piece ("3 pieces $8") is stored as `un` on a weight item:
-    // history-only, never compared. Any other kind mismatch is an extraction error.
-    const byPiece = isMeat && item.kind === 'weight' && kindOf(p.unit) === 'count'
+    // Anything sold by the piece with no printed size ("3 pieces $8",
+    // "2 for $5") is stored honestly as `un` even on a weight/volume item:
+    // a reference-only record — kept in history, excluded from comparisons,
+    // fixable later by editing in the qty/weight. Any other kind mismatch
+    // (e.g. volume unit on a weight item) is an extraction error.
+    const byPiece = item.kind !== 'count' && kindOf(p.unit) === 'count'
     if (kindOf(p.unit) !== item.kind && !byPiece) {
       log(`  skip "${p.name}": unit ${p.unit} incompatible with item kind ${item.kind}`)
       continue
