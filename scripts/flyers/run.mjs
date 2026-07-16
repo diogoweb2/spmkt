@@ -1,7 +1,8 @@
-// Weekly flyer import: downloads page 1 of each store's flyer from
-// flyers-on-line.com, has Claude (headless) read the image and extract the
+// Weekly flyer import: downloads every page of each store's flyer from
+// flyers-on-line.com, has Claude (headless) read the images and extract the
 // deals, then appends them as price records to the shared family db in
-// Firestore. The image is deleted after processing.
+// Firestore. The images are deleted after processing. (Was page-1-only until
+// the import whitelist existed to keep the volume sane.)
 //
 // Usage:
 //   node scripts/flyers/run.mjs            # full run
@@ -42,23 +43,35 @@ function parseValidUntil(html) {
   return isNaN(dt) ? null : dt.getTime()
 }
 
-async function downloadFirstPage(store, dir) {
+async function downloadPages(store, dir) {
   const res = await fetch(store.url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
   if (!res.ok) throw new Error(`fetch ${store.url}: HTTP ${res.status}`)
   const html = await res.text()
   const validUntil = parseValidUntil(html)
   // Page images are /data/promotions/<id>/<slug>_NN.jpg. The suffix is NOT the
   // display order — Superstore's first page is _07, with _01.._06 being ad
-  // inserts. The site renders pages in document order, so the first image that
-  // appears in the HTML is the flyer's page 1.
-  const m = html.match(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/)
-  if (!m) throw new Error(`no flyer page image found at ${store.url}`)
-  const imgRes = await fetch(m[0], { headers: { 'User-Agent': 'Mozilla/5.0', Referer: store.url } })
-  if (!imgRes.ok) throw new Error(`image download: HTTP ${imgRes.status}`)
-  const file = join(dir, `${store.name.toLowerCase().replace(/\W+/g, '-')}-page1.jpg`)
-  writeFileSync(file, Buffer.from(await imgRes.arrayBuffer()))
-  log(`${store.name}: downloaded ${m[0]} -> ${file} (valid until ${validUntil ? new Date(validUntil).toDateString() : 'unknown'})`)
-  return { file, validUntil }
+  // inserts. The site renders pages in document order, so we keep the URLs in
+  // the order they appear in the HTML (deduped: each page is referenced twice).
+  const urls = [...new Set(
+    [...html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)]
+      .map((m) => m[0]),
+  )]
+  if (!urls.length) throw new Error(`no flyer page images found at ${store.url}`)
+  const files = []
+  for (const [i, url] of urls.entries()) {
+    try {
+      const imgRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: store.url } })
+      if (!imgRes.ok) throw new Error(`HTTP ${imgRes.status}`)
+      const file = join(dir, `${store.name.toLowerCase().replace(/\W+/g, '-')}-page${String(i + 1).padStart(2, '0')}.jpg`)
+      writeFileSync(file, Buffer.from(await imgRes.arrayBuffer()))
+      files.push(file)
+    } catch (err) {
+      log(`${store.name}: page ${i + 1} download failed (${err.message}) — skipping that page`)
+    }
+  }
+  if (!files.length) throw new Error(`all ${urls.length} page downloads failed for ${store.url}`)
+  log(`${store.name}: downloaded ${files.length}/${urls.length} pages (valid until ${validUntil ? new Date(validUntil).toDateString() : 'unknown'})`)
+  return { files, validUntil }
 }
 
 // ---------- claude extraction ----------
@@ -217,10 +230,24 @@ for (const store of stores) {
       // — never lets an empty list silently import nothing. Meat is exempt.
       if (db?.whitelistOn && db?.whitelist?.length) whitelist = db.whitelist.map((r) => r.text)
     }
-    const dl = await downloadFirstPage(store, workDir)
-    imgs.push(dl.file)
-    const products = extractProducts(dl.file, store.name, existingNames, ignoredNames, whitelist)
-    log(`${store.name}: extracted ${products.length} products`)
+    const dl = await downloadPages(store, workDir)
+    imgs.push(...dl.files)
+    // One Claude call per page; a single bad page doesn't sink the store's
+    // whole flyer. Cross-page duplicates are handled by insertProducts'
+    // one-flyer-record-per-item+store-per-week dedupe.
+    const products = []
+    let extractFailed = 0
+    for (const [i, file] of dl.files.entries()) {
+      try {
+        const page = extractProducts(file, `${store.name} p${i + 1}/${dl.files.length}`, existingNames, ignoredNames, whitelist)
+        products.push(...page)
+      } catch (err) {
+        extractFailed++
+        log(`${store.name}: page ${i + 1} extraction failed (${err.message}) — skipping that page`)
+      }
+    }
+    if (extractFailed === dl.files.length) throw new Error(`extraction failed on all ${dl.files.length} pages`)
+    log(`${store.name}: extracted ${products.length} products from ${dl.files.length - extractFailed}/${dl.files.length} pages`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
     } else {
