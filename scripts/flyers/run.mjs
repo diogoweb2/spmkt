@@ -76,9 +76,12 @@ async function downloadPages(store, dir) {
 
 // ---------- claude extraction ----------
 
-const EXTRACT_PROMPT = (imgPath, existingNames, ignoredNames, whitelist) => `Use the Read tool to open the image file ${imgPath} — it is a supermarket flyer page and you CAN view images via the Read tool. Then extract every grocery deal on it.
+// All of a flyer's pages go into ONE call: the system prompt, the rules and
+// the db item names are paid once per store instead of once per page.
+const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist) => `Use the Read tool to open ${imgPaths.length === 1 ? 'this image file' : `these ${imgPaths.length} image files, one by one`} — they are the pages of one supermarket flyer and you CAN view images via the Read tool:
+${imgPaths.join('\n')}
 
-Output ONLY a JSON array (no prose, no markdown fence). Each element:
+Extract every grocery deal from ALL pages combined. Output ONLY a single JSON array (no prose, no markdown fence). If the same product appears on more than one page, output it once. Each element:
 {"name": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null}
 
 Rules:
@@ -107,13 +110,13 @@ Rules:
   Meat/fish/poultry (category "meat") are EXEMPT: always include them regardless of the whitelist.
   If an IGNORED PRODUCTS rule above conflicts with the whitelist, the ignore wins: an ignored product type stays out.` : ''}`
 
-function extractProducts(imgPath, storeName, existingNames, ignoredNames, whitelist) {
+function extractProducts(imgPaths, storeName, existingNames, ignoredNames, whitelist) {
   const claude = findClaude()
-  log(`${storeName}: extracting with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath, existingNames, ignoredNames, whitelist), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
+  log(`${storeName}: extracting ${imgPaths.length} page${imgPaths.length === 1 ? '' : 's'} with ${claude}`)
+  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPaths, existingNames, ignoredNames, whitelist), '--allowedTools', 'Read', '--model', 'claude-haiku-4-5'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
-    timeout: 10 * 60 * 1000,
+    timeout: 30 * 60 * 1000,
   })
   const products = lastJsonArray(out)
   const allUnits = Object.values(UNITS).flat()
@@ -232,22 +235,11 @@ for (const store of stores) {
     }
     const dl = await downloadPages(store, workDir)
     imgs.push(...dl.files)
-    // One Claude call per page; a single bad page doesn't sink the store's
-    // whole flyer. Cross-page duplicates are handled by insertProducts'
+    // One Claude call per store, all pages at once (token efficiency). Any
+    // cross-page or re-run duplicates are handled by insertProducts'
     // one-flyer-record-per-item+store-per-week dedupe.
-    const products = []
-    let extractFailed = 0
-    for (const [i, file] of dl.files.entries()) {
-      try {
-        const page = extractProducts(file, `${store.name} p${i + 1}/${dl.files.length}`, existingNames, ignoredNames, whitelist)
-        products.push(...page)
-      } catch (err) {
-        extractFailed++
-        log(`${store.name}: page ${i + 1} extraction failed (${err.message}) — skipping that page`)
-      }
-    }
-    if (extractFailed === dl.files.length) throw new Error(`extraction failed on all ${dl.files.length} pages`)
-    log(`${store.name}: extracted ${products.length} products from ${dl.files.length - extractFailed}/${dl.files.length} pages`)
+    const products = extractProducts(dl.files, store.name, existingNames, ignoredNames, whitelist)
+    log(`${store.name}: extracted ${products.length} products from ${dl.files.length} pages`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
     } else {
