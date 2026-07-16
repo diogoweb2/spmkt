@@ -11,7 +11,9 @@
     "classify:new": "node scripts/flyers/classify-meat.mjs --new",
     "flyers": "node scripts/flyers/run.mjs",
     "flyers:force": "node scripts/flyers/run.mjs --force",
-    "flyers:dry": "node scripts/flyers/run.mjs --dry-run"
+    "flyers:dry": "node scripts/flyers/run.mjs --dry-run",
+    "prune": "node scripts/flyers/prune-whitelist.mjs",
+    "prune:dry": "node scripts/flyers/prune-whitelist.mjs --dry-run"
   },
   "dependencies": {
     "firebase": "^12.15.0",
