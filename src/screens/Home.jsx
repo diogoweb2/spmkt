@@ -6,6 +6,7 @@ import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
 import PhotoLink from '../components/PhotoLink'
 import CompareReport from '../components/CompareReport'
+import Chips from '../components/Chips'
 
 // Color a flyer's "until <date>" by how close it is to expiring.
 const UNTIL_COLOR = { red: 'var(--red)', amber: 'var(--amber)', green: 'var(--accent)' }
@@ -25,33 +26,6 @@ function untilUrgency(ts) {
 // select any row (🚫 Don't import — delete & ignore, no kind restriction).
 // Store picking lives in the Location tab.
 const RATING_KEYS = Object.keys(RATING)
-
-// Horizontally scrollable chip row; wheel + drag scrolling for mouse users
-// (the scrollbar is hidden and mice have no horizontal wheel).
-function Chips({ children, style }) {
-  const drag = (e) => {
-    const el = e.currentTarget
-    const startX = e.clientX
-    const startLeft = el.scrollLeft
-    const move = (ev) => { el.scrollLeft = startLeft - (ev.clientX - startX) }
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-  return (
-    <div
-      className="chips"
-      style={style}
-      onWheel={(e) => { e.currentTarget.scrollLeft += e.deltaY + e.deltaX }}
-      onPointerDown={(e) => { if (e.pointerType === 'mouse') drag(e) }}
-    >
-      {children}
-    </div>
-  )
-}
 
 export default function Home({ db, update, push }) {
   const groups = useMemo(() => meatDeals(db), [db])

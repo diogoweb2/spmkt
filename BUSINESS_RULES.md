@@ -139,6 +139,8 @@ Compared **only against other records of the same item + variant**, using normal
 
 ## 11. Bugs & ideas (Settings)
 
+> Settings is organized into scrollable tabs: 🏪 Stores · 📰 Import (whitelist + ignored products) · 💳 Cashback · 🔔 Alerts · 📝 Notes · 💾 Data (backup, security, danger zone). Default tab: Stores.
+
 - A todo list inside Settings (`src/components/Notes.jsx`) for logging **bugs 🐞** and **ideas 💡** while using the app.
 - A note is `{id, type, text, done, ts}`; `ts` is set at save time. Stored in `db.notes`, so it syncs across devices and is included in the JSON export.
 - Add: pick type (bug/idea), type the text, Add (or Enter). Rows can be checked off (`done`, shown struck through) or deleted (with confirmation).

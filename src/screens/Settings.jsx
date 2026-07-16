@@ -6,6 +6,18 @@ import { addWhitelistRule, removeWhitelistRule, whitelistRules } from '../lib/wh
 import { cashbackEnabled } from '../lib/cashback'
 import { enablePush, pushSupported } from '../lib/push'
 import Notes from '../components/Notes'
+import Chips from '../components/Chips'
+
+// Settings is split into scrollable tabs — one per topic, so the screen
+// isn't one endless column of cards.
+const TABS = [
+  ['stores', '🏪 Stores'],
+  ['import', '📰 Import'],
+  ['cashback', '💳 Cashback'],
+  ['alerts', '🔔 Alerts'],
+  ['notes', '📝 Notes'],
+  ['data', '💾 Data'],
+]
 
 function replaceDB(update, data) {
   update((d) => {
@@ -21,6 +33,7 @@ export default function Settings({ db, update, onSignOut }) {
   const [renameVal, setRenameVal] = useState('')
   const [pushOk, setPushOk] = useState(null) // null = unknown, true/false = supported
   const [wlText, setWlText] = useState('')
+  const [tab, setTab] = useState('stores')
   const [pushMsg, setPushMsg] = useState('')
   const [pushing, setPushing] = useState(false)
 
@@ -69,6 +82,15 @@ export default function Settings({ db, update, onSignOut }) {
         <h1>Settings ⚙️</h1>
       </div>
 
+      <Chips style={{ marginBottom: 12 }}>
+        {TABS.map(([k, label]) => (
+          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+            {label}
+          </button>
+        ))}
+      </Chips>
+
+      {tab === 'stores' && (
       <div className="card">
         <h2>Stores</h2>
         <div className="list">
@@ -114,8 +136,9 @@ export default function Settings({ db, update, onSignOut }) {
           ))}
         </div>
       </div>
+      )}
 
-      {(db.ignored ?? []).length > 0 && (
+      {tab === 'import' && (db.ignored ?? []).length > 0 && (
         <div className="card">
           <h2>Ignored products 🚫</h2>
           <p className="muted small" style={{ marginBottom: 12 }}>
@@ -137,6 +160,7 @@ export default function Settings({ db, update, onSignOut }) {
         </div>
       )}
 
+      {tab === 'import' && (
       <div className="card">
         <h2>Import whitelist ✅</h2>
         <p className="muted small" style={{ marginBottom: 12 }}>
@@ -200,7 +224,9 @@ export default function Settings({ db, update, onSignOut }) {
           </div>
         )}
       </div>
+      )}
 
+      {tab === 'cashback' && (
       <div className="card">
         <h2>Card cashback 💳</h2>
         <p className="muted small" style={{ marginBottom: 12 }}>
@@ -216,7 +242,9 @@ export default function Settings({ db, update, onSignOut }) {
           <span className="title" style={{ fontSize: 15 }}>Apply cashback to prices</span>
         </label>
       </div>
+      )}
 
+      {tab === 'alerts' && (
       <div className="card">
         <h2>Notifications 🔔</h2>
         <p className="muted small" style={{ marginBottom: 12 }}>
@@ -240,9 +268,12 @@ export default function Settings({ db, update, onSignOut }) {
           </p>
         )}
       </div>
+      )}
 
-      <Notes db={db} update={update} />
+      {tab === 'notes' && <Notes db={db} update={update} />}
 
+      {tab === 'data' && (
+      <>
       <div className="card">
         <h2>Backup</h2>
         <p className="muted small" style={{ marginBottom: 12 }}>
@@ -287,6 +318,8 @@ export default function Settings({ db, update, onSignOut }) {
           </>
         )}
       </div>
+      </>
+      )}
 
       <p className="muted small" style={{ textAlign: 'center', marginTop: 10 }}>
         Smart Price · synced with Firebase
