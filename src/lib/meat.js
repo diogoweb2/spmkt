@@ -3,8 +3,9 @@
 // LLM classification pass (scripts/flyers/classify-meat.mjs); manual items
 // default to processing 'natural' and are classified on the next pass.
 
-import { UNITS } from './units'
+import { UNITS, unitKind, normalizedPrice } from './units'
 import { itemRecords, isComparable, recordNorm } from './analysis'
+import { effectivePrice } from './cashback'
 
 export const MEAT_TYPES = ['beef', 'pork', 'chicken', 'fish', 'other']
 
@@ -53,44 +54,60 @@ export function dealRating(item, norm) {
   return 'bad'
 }
 
-// An item's current best deal: each store's latest non-expired comparable
-// record; the cheapest store wins. Records with no validUntil (manual
-// entries) never expire. null when the item has no live comparable price.
-function bestDeal(db, item, now) {
+// An item's current deals: each store's latest non-expired record; the
+// cheapest store wins. Records with no validUntil (manual entries) never
+// expire. Returns up to TWO deals per item:
+// - a comparable deal (normalized $/100g etc), and
+// - a by-piece deal (§3 reference `un` records on a weight/volume item,
+//   normalized per unit) — surfaced on Home so the user notices it and can
+//   edit in the real weight; it never mixes into comparison math.
+function bestDeals(db, item, now) {
   const recs = itemRecords(db, item.id).filter(
-    (r) => isComparable(item, r) && (r.validUntil == null || r.validUntil >= now),
+    (r) => r.validUntil == null || r.validUntil >= now,
   )
-  const byStore = new Map()
-  for (const r of recs) {
-    if (!byStore.has(r.storeId)) byStore.set(r.storeId, r) // recs sorted desc -> latest wins
+  const pick = (list, normOf) => {
+    const byStore = new Map()
+    for (const r of list) {
+      if (!byStore.has(r.storeId)) byStore.set(r.storeId, r) // recs sorted desc -> latest wins
+    }
+    let best = null
+    for (const rec of byStore.values()) {
+      const norm = normOf(rec)
+      if (norm != null && (!best || norm < best.norm)) best = { rec, norm }
+    }
+    if (!best) return null
+    const store = db.stores.find((s) => s.id === best.rec.storeId)
+    if (!store) return null
+    return { item, store, rec: best.rec, norm: best.norm }
   }
-  let best = null
-  for (const rec of byStore.values()) {
-    const norm = recordNorm(rec, item, db)
-    if (norm != null && (!best || norm < best.norm)) best = { rec, norm }
-  }
-  if (!best) return null
-  const store = db.stores.find((s) => s.id === best.rec.storeId)
-  if (!store) return null
-  return { item, store, rec: best.rec, norm: best.norm }
+  const deal = pick(recs.filter((r) => isComparable(item, r)), (r) => recordNorm(r, item, db))
+  const piece = item.kind === 'count' ? null : pick(
+    recs.filter((r) => unitKind(r.unit) === 'count'),
+    (r) => normalizedPrice(effectivePrice(db, r), r.qty, r.unit),
+  )
+  const out = []
+  if (deal) out.push({ ...deal, key: item.id, byPiece: false })
+  if (piece) out.push({ ...piece, key: `${item.id}|bp`, byPiece: true })
+  return out
 }
 
-// Current best deal per meat item, grouped by meat type.
+// Current best deal(s) per meat item, grouped by meat type.
 export function meatDeals(db) {
   const now = Date.now()
   const groups = {}
   for (const item of db.items) {
     if (item.category !== 'meat') continue
-    const best = bestDeal(db, item, now)
-    if (!best) continue
-    const type = MEAT_TYPES.includes(item.meatType)
-      ? item.meatType
-      : guessMeatType(item.name) ?? 'other'
-    ;(groups[type] ??= []).push({
-      ...best,
-      rating: dealRating(item, best.norm),
-      ultra: item.processing === 'ultra',
-    })
+    for (const best of bestDeals(db, item, now)) {
+      const type = MEAT_TYPES.includes(item.meatType)
+        ? item.meatType
+        : guessMeatType(item.name) ?? 'other'
+      ;(groups[type] ??= []).push({
+        ...best,
+        // by-piece prices can't be rated against $/lb market thresholds
+        rating: best.byPiece ? null : dealRating(item, best.norm),
+        ultra: item.processing === 'ultra',
+      })
+    }
   }
   // Natural products first, then ultra-processed; cheapest first within each.
   for (const list of Object.values(groups)) {
@@ -107,8 +124,9 @@ export function groceryDeals(db) {
   const out = []
   for (const item of db.items) {
     if (item.category === 'meat') continue
-    const best = bestDeal(db, item, now)
-    if (best) out.push({ ...best, rating: dealRating(item, best.norm), ultra: false })
+    for (const best of bestDeals(db, item, now)) {
+      out.push({ ...best, rating: best.byPiece ? null : dealRating(item, best.norm), ultra: false })
+    }
   }
   out.sort((a, b) => a.norm - b.norm)
   return out

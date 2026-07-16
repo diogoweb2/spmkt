@@ -59,15 +59,15 @@ export default function Home({ db, update, push }) {
   )
 
   async function sendToRv(d) {
-    setRvState((s) => ({ ...s, [d.item.id]: 'pending' }))
+    setRvState((s) => ({ ...s, [d.key]: 'pending' }))
     try {
       await addToRvList({
         storeName: d.store.name,
         itemName: d.item.name,
-        priceLabel: fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit),
+        priceLabel: fmtDisplay(d.norm, d.byPiece ? 'count' : d.item.kind, db.displayWeightUnit),
         validUntil: d.rec.validUntil ?? undefined,
       })
-      setRvState((s) => ({ ...s, [d.item.id]: undefined }))
+      setRvState((s) => ({ ...s, [d.key]: undefined }))
       update((next) => {
         // Prune markers whose record expired or is gone — their ✓ is moot
         // (the deal left Home), so they'd only accumulate forever.
@@ -81,8 +81,8 @@ export default function Home({ db, update, push }) {
       navigator.vibrate?.(15)
     } catch (e) {
       console.error('addToRvList failed', e)
-      setRvState((s) => ({ ...s, [d.item.id]: 'err' }))
-      setTimeout(() => setRvState((s) => ({ ...s, [d.item.id]: undefined })), 2500)
+      setRvState((s) => ({ ...s, [d.key]: 'err' }))
+      setTimeout(() => setRvState((s) => ({ ...s, [d.key]: undefined })), 2500)
     }
   }
 
@@ -136,7 +136,18 @@ export default function Home({ db, update, push }) {
         return list.length ? [{ key: 'grocery', label: null, list }] : []
       })()
 
-  const selectedDeals = allDeals.filter((d) => selected.includes(d.item.id))
+  // Selection is per item; an item can have two rows (normal + by-piece),
+  // so dedupe by item id — trays and CompareReport want one entry per item.
+  const selectedDeals = []
+  {
+    const seen = new Set()
+    for (const d of allDeals) {
+      if (selected.includes(d.item.id) && !seen.has(d.item.id)) {
+        seen.add(d.item.id)
+        selectedDeals.push(d)
+      }
+    }
+  }
   const compareKind = selectedDeals[0]?.item.kind ?? null
   // CompareReport rows: variant null = compare across all the item's records
   const compareRows = selectedDeals.map((d) => ({ item: d.item, variant: null, label: '', key: d.item.id }))
@@ -329,11 +340,13 @@ export default function Home({ db, update, push }) {
             {list.map((d) => {
               const isSel = selected.includes(d.item.id)
               // Kind restriction only applies to ⚖️ Compare (same-kind report);
-              // hold-to-select for ignoring has no such constraint.
-              const disabled = comparing && compareKind && d.item.kind !== compareKind && !isSel
+              // hold-to-select for ignoring has no such constraint. By-piece
+              // rows have no comparable price, so Compare never accepts them.
+              const disabled = comparing &&
+                (d.byPiece || (compareKind && d.item.kind !== compareKind && !isSel))
               return (
               <button
-                key={d.item.id}
+                key={d.key}
                 className="row"
                 style={{
                   ...(isSel ? { background: 'var(--accent-soft)', borderRadius: 10, padding: '13px 8px' } : null),
@@ -371,13 +384,14 @@ export default function Home({ db, update, push }) {
                   </div>
                 </div>
                 <div className="right">
-                  <div className="title">{fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit)}</div>
+                  <div className="title">{fmtDisplay(d.norm, d.byPiece ? 'count' : d.item.kind, db.displayWeightUnit)}</div>
+                  {d.byPiece && <span className="badge lvl-ok">📦 by piece</span>}
                   {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
                 </div>
                 {/* Send the deal to the RV Groceries shopping list (rvlist.js).
                     span, not button: rows are already buttons. */}
                 {!comparing && !selecting && (() => {
-                  const st = rvState[d.item.id] ??
+                  const st = rvState[d.key] ??
                     (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)
                   return (
                     <span
