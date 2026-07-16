@@ -158,7 +158,7 @@ export default function Settings({ db, update, onSignOut }) {
             No keywords yet — the import still brings in everything until you add one.
           </p>
         )}
-        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'stretch' }}>
           <input
             type="text"
             placeholder="e.g. Chips but not Pringles"
@@ -170,10 +170,11 @@ export default function Settings({ db, update, onSignOut }) {
                 setWlText('')
               }
             }}
-            style={{ flex: 1, padding: 10, fontSize: 15 }}
+            style={{ flex: 1, minWidth: 0 }}
           />
           <button
-            className="btn ghost"
+            className="btn small ghost"
+            style={{ flexShrink: 0 }}
             disabled={!wlText.trim()}
             onClick={() => {
               update((d) => addWhitelistRule(d, wlText))
