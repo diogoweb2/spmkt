@@ -107,6 +107,15 @@ h2 { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
 .row .right { text-align: right; flex-shrink: 0; }
 .chev { color: var(--muted); font-size: 18px; }
 
+/* "+" on a deal row: send the item to the RV Groceries app's shopping list */
+.rv-add {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--accent); color: var(--accent);
+  font-size: 18px; font-weight: 700; line-height: 1; user-select: none;
+}
+.rv-add.on { background: var(--accent); color: #fff; }
+
 /* ---------- store grid ---------- */
 .store-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .store-btn {

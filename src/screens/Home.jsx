@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
 import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
+import { addToRvList } from '../lib/rvlist'
 import PhotoLink from '../components/PhotoLink'
 import CompareReport from '../components/CompareReport'
 
@@ -51,6 +52,27 @@ export default function Home({ db, push }) {
   const [selected, setSelected] = useState([]) // item ids
   const [report, setReport] = useState(false)
   const press = useRef({ timer: null, long: false })
+  // Per-item state of the "＋ send to RV Groceries" button: 'pending' → '✓'
+  // once the deal landed on the store's list in the other app ('err' resets).
+  const [rvState, setRvState] = useState({})
+
+  async function sendToRv(d) {
+    setRvState((s) => ({ ...s, [d.item.id]: 'pending' }))
+    try {
+      await addToRvList({
+        storeName: d.store.name,
+        itemName: d.item.name,
+        priceLabel: fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit),
+        validUntil: d.rec.validUntil ?? undefined,
+      })
+      setRvState((s) => ({ ...s, [d.item.id]: 'ok' }))
+      navigator.vibrate?.(15)
+    } catch (e) {
+      console.error('addToRvList failed', e)
+      setRvState((s) => ({ ...s, [d.item.id]: 'err' }))
+      setTimeout(() => setRvState((s) => ({ ...s, [d.item.id]: undefined })), 2500)
+    }
+  }
 
   const dealStores = useMemo(() => {
     const map = new Map()
@@ -263,6 +285,22 @@ export default function Home({ db, push }) {
                   <div className="title">{fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit)}</div>
                   {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
                 </div>
+                {/* Send the deal to the RV Groceries shopping list (rvlist.js).
+                    span, not button: rows are already buttons. */}
+                {!comparing && (
+                  <span
+                    role="button"
+                    aria-label="Add to RV Groceries list"
+                    className={`rv-add${rvState[d.item.id] ? ' on' : ''}`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!rvState[d.item.id]) sendToRv(d)
+                    }}
+                  >
+                    {{ pending: '…', ok: '✓', err: '!' }[rvState[d.item.id]] ?? '+'}
+                  </span>
+                )}
               </button>
               )
             })}
