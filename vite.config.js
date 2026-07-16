@@ -10,6 +10,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // The FCM background worker is its own service worker on a separate scope;
+      // keep Workbox from precaching (and staling) it.
+      workbox: { globIgnores: ['**/firebase-messaging-sw.js'] },
       manifest: {
         name: 'Smart Price',
         short_name: 'SmartPrice',

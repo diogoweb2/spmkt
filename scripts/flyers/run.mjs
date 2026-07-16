@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray } from './shared.mjs'
+import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray, sendPush } from './shared.mjs'
 import { classifyMeat } from './classify-meat.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -167,6 +167,7 @@ async function insertProducts(products, storeName, env, validUntil) {
   }
   await save(db)
   log(`${storeName}: saved ${added} new records (${products.length - added} skipped as dupes/invalid)`)
+  return added
 }
 
 // ---------- main ----------
@@ -180,6 +181,7 @@ if (!DRY_RUN && !env.FAMILY_PASSWORD && !existsSync(join(here, 'service-account.
 
 const workDir = mkdtempSync(join(tmpdir(), 'spmkt-flyers-'))
 let failed = false
+const results = [] // { name, added? , skipped?, error? }
 for (const store of stores) {
   const imgs = []
   try {
@@ -194,6 +196,7 @@ for (const store of stores) {
         .reduce((max, r) => Math.max(max, r.ts), 0)
       if (last && Date.now() - last < WEEK_MS && !FORCE) {
         log(`${store.name}: already imported ${new Date(last).toLocaleString()} — skipping (use --force to re-import)`)
+        results.push({ name: store.name, skipped: true })
         continue
       }
       existingNames = db?.items?.map((i) => i.name) ?? []
@@ -206,10 +209,12 @@ for (const store of stores) {
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
     } else {
-      await insertProducts(products, store.name, env, dl.validUntil)
+      const added = await insertProducts(products, store.name, env, dl.validUntil)
+      results.push({ name: store.name, added })
     }
   } catch (err) {
     failed = true
+    results.push({ name: store.name, error: err.message })
     console.error(`[${store.name}] FAILED: ${err.message}`)
   } finally {
     for (const f of imgs) if (existsSync(f)) unlinkSync(f)
@@ -219,12 +224,32 @@ rmSync(workDir, { recursive: true, force: true })
 
 // After the imports: classify new meat items (type, natural vs ultra-processed)
 // and refresh the Toronto market thresholds the app rates deals against.
+let classifyFailed = false
 if (!DRY_RUN) {
   try {
     await classifyMeat(env)
   } catch (err) {
     failed = true
+    classifyFailed = true
     console.error(`[classify-meat] FAILED: ${err.message}`)
+  }
+}
+
+// Notify every registered device with a summary of this run.
+if (!DRY_RUN) {
+  try {
+    const imported = results.filter((r) => r.added != null)
+    const errored = results.filter((r) => r.error)
+    const skipped = results.filter((r) => r.skipped)
+    const totalAdded = imported.reduce((s, r) => s + r.added, 0)
+    const title = failed ? '⚠️ Flyer sync finished with errors' : '✅ Flyer sync done'
+    const parts = [`${totalAdded} new deal${totalAdded === 1 ? '' : 's'} from ${imported.length} store${imported.length === 1 ? '' : 's'}.`]
+    if (errored.length) parts.push(`Failed: ${errored.map((r) => r.name).join(', ')}.`)
+    if (classifyFailed) parts.push('Meat classification failed.')
+    if (skipped.length) parts.push(`${skipped.length} already up to date.`)
+    await sendPush(env, { title, body: parts.join(' ') })
+  } catch (err) {
+    console.error(`[push] FAILED: ${err.message}`)
   }
 }
 process.exit(failed ? 1 : 0)

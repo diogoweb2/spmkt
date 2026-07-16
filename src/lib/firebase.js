@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
-const app = initializeApp({
+export const app = initializeApp({
   apiKey: 'AIzaSyCVCDsMH1-cJ2rr_7o8WVBG26__Jl2bMXg',
   authDomain: 'spmkt-cc6fd.firebaseapp.com',
   projectId: 'spmkt-cc6fd',

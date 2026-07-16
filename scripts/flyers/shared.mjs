@@ -59,6 +59,40 @@ export async function openFamilyDoc(env) {
   return familyDoc
 }
 
+// Web-push notification to every device registered in db.pushTokens (Settings →
+// Notifications). Requires the admin SDK (service-account.json); the
+// family-password path can't send FCM, so it's a no-op there. Dead tokens
+// (uninstalled apps, expired) are pruned from the doc as they're discovered.
+const SITE = 'https://spmkt-cc6fd.web.app'
+export async function sendPush(env, { title, body }) {
+  if (!existsSync(join(here, 'service-account.json'))) {
+    log('push: skipped (no service-account.json; admin SDK required)')
+    return
+  }
+  const { db, save } = await openFamilyDoc(env)
+  const tokens = (db?.pushTokens ?? []).map((t) => t.token)
+  if (!tokens.length) {
+    log('push: no registered devices')
+    return
+  }
+  const { getMessaging } = await import('firebase-admin/messaging')
+  const res = await getMessaging().sendEachForMulticast({
+    tokens,
+    webpush: {
+      notification: { title, body, icon: `${SITE}/favicon.svg` },
+      fcmOptions: { link: SITE },
+    },
+  })
+  const dead = res.responses
+    .map((r, i) => (!r.success && /not-registered|invalid-argument|invalid-registration/.test(r.error?.code || '') ? tokens[i] : null))
+    .filter(Boolean)
+  if (dead.length) {
+    db.pushTokens = db.pushTokens.filter((t) => !dead.includes(t.token))
+    await save(db)
+  }
+  log(`push: sent to ${res.successCount}/${tokens.length} device(s)${dead.length ? `, pruned ${dead.length} dead` : ''}`)
+}
+
 async function connectFamilyDoc(env) {
   const keyPath = join(here, 'service-account.json')
   if (existsSync(keyPath)) {

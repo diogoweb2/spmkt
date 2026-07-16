@@ -19,6 +19,7 @@ export const DEFAULT_DB = {
   records: [], // {id, itemId, storeId, price, qty, unit, frozen|null, ts}
   notes: [], // {id, type: 'bug'|'idea', text, done, ts}
   ignored: [], // {id, name, ts} — products the user deleted & ignored; flyer import skips their kind
+  pushTokens: [], // {token, ua, ts} — FCM web-push tokens; the flyer job notifies these devices
 }
 
 function userDoc(userId) {

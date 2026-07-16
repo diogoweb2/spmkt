@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { exportJSON, DEFAULT_DB } from '../lib/db'
 import { UNITS } from '../lib/units'
 import { unignore } from '../lib/ignore'
 import { cashbackEnabled } from '../lib/cashback'
+import { enablePush, pushSupported } from '../lib/push'
 import Notes from '../components/Notes'
 
 function replaceDB(update, data) {
@@ -17,6 +18,30 @@ export default function Settings({ db, update, onSignOut }) {
   const [confirmWipe, setConfirmWipe] = useState(false)
   const [renaming, setRenaming] = useState(null)
   const [renameVal, setRenameVal] = useState('')
+  const [pushOk, setPushOk] = useState(null) // null = unknown, true/false = supported
+  const [pushMsg, setPushMsg] = useState('')
+  const [pushing, setPushing] = useState(false)
+
+  useEffect(() => { pushSupported().then(setPushOk) }, [])
+
+  async function turnOnPush() {
+    setPushing(true)
+    setPushMsg('')
+    try {
+      const token = await enablePush()
+      update((d) => {
+        d.pushTokens ??= []
+        const existing = d.pushTokens.find((t) => t.token === token)
+        if (existing) existing.ts = Date.now()
+        else d.pushTokens.push({ token, ua: navigator.userAgent, ts: Date.now() })
+      })
+      setPushMsg('✅ This device will be notified when the weekly flyer sync runs.')
+    } catch (err) {
+      setPushMsg(`⚠️ ${err.message}`)
+    } finally {
+      setPushing(false)
+    }
+  }
 
   function importFile(e) {
     const file = e.target.files?.[0]
@@ -124,6 +149,30 @@ export default function Settings({ db, update, onSignOut }) {
           />
           <span className="title" style={{ fontSize: 15 }}>Apply cashback to prices</span>
         </label>
+      </div>
+
+      <div className="card">
+        <h2>Notifications 🔔</h2>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          Get a push on this device when the weekly flyer sync finishes — with how many
+          new deals were imported, or if anything failed.
+        </p>
+        {pushOk === false ? (
+          <p className="small muted">
+            This browser can’t receive push notifications. On iPhone, add Smart Price to your
+            Home Screen first (Share → Add to Home Screen), then open it from there.
+          </p>
+        ) : (
+          <button className="btn ghost" onClick={turnOnPush} disabled={pushing || pushOk === null}>
+            {pushing ? 'Enabling…' : '🔔 Notify this device'}
+          </button>
+        )}
+        {pushMsg && <p className="small" style={{ marginTop: 10 }}>{pushMsg}</p>}
+        {(db.pushTokens ?? []).length > 0 && (
+          <p className="muted small" style={{ marginTop: 10 }}>
+            {db.pushTokens.length} device{db.pushTokens.length > 1 ? 's' : ''} registered.
+          </p>
+        )}
       </div>
 
       <Notes db={db} update={update} />
