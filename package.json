@@ -8,7 +8,10 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "classify:new": "node scripts/flyers/classify-meat.mjs --new"
+    "classify:new": "node scripts/flyers/classify-meat.mjs --new",
+    "flyers": "node scripts/flyers/run.mjs",
+    "flyers:force": "node scripts/flyers/run.mjs --force",
+    "flyers:dry": "node scripts/flyers/run.mjs --dry-run"
   },
   "dependencies": {
     "firebase": "^12.15.0",
