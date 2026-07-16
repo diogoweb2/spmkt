@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { pricesByStore } from '../lib/analysis'
-import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
+import { UNITS, displayUnitLabel, fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
 import { effectivePrice } from '../lib/cashback'
 
 // Ranked comparison using each store's LATEST price per product (never old prices).
@@ -8,6 +9,17 @@ export default function CompareReport({ db, rows, onBack, onDone }) {
   const kind = rows[0].item.kind
   const wu = db.displayWeightUnit
   const fmt = (n) => fmtDisplay(n, kind, wu)
+
+  // "Worth the trip?" — scale the per-unit gaps to the amount the user plans
+  // to buy, so a small $/lb difference becomes a concrete total $ difference.
+  const unitLabel = displayUnitLabel(kind, wu)
+  const range = kind === 'count' ? { min: 1, max: 50, step: 1 } : { min: 0.5, max: 30, step: 0.5 }
+  const [amount, setAmount] = useState(5)
+  // display amount -> base units (g / ml / units)
+  const toBase = kind === 'weight' ? (wu === 'kg' ? 1000 : UNITS.lb.toBase) : kind === 'volume' ? 1000 : 1
+  // norm is per 100 g / 100 ml (per 1 for count)
+  const totalAt = (norm) => norm * (amount * toBase) / (kind === 'count' ? 1 : 100)
+  const extra = (norm, ref) => totalAt(norm) - totalAt(ref)
 
   // entries[i]: row + its latest price per store (pricesByStore = latest per store)
   const entries = rows.map((row) => ({
@@ -49,6 +61,33 @@ export default function CompareReport({ db, rows, onBack, onDone }) {
       </div>
 
       <div className="card">
+        <h2>🚗 Worth the trip?</h2>
+        <p className="muted small" style={{ marginTop: -6, marginBottom: 6 }}>
+          Slide to how much you'll buy — differences below turn into total dollars.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <input
+            type="range"
+            min={range.min}
+            max={range.max}
+            step={range.step}
+            value={amount}
+            onChange={(e) => setAmount(Number(e.target.value))}
+            style={{ flex: 1 }}
+          />
+          <div className="title" style={{ fontSize: 15, whiteSpace: 'nowrap' }}>
+            {amount} {unitLabel}{kind === 'count' && amount !== 1 ? 's' : ''}
+          </div>
+        </div>
+        <p className="muted small" style={{ marginBottom: 0 }}>
+          {amount} {unitLabel} of {name(winner.row)} at {winner.pick.store.name}: <b>{fmtMoney(totalAt(winner.pick.norm))}</b>
+          {bestMix.length > 1 && (
+            <> · priciest pick instead: <b style={{ color: 'var(--red)' }}>+{fmtMoney(extra(bestMix[bestMix.length - 1].pick.norm, winner.pick.norm))}</b></>
+          )}
+        </p>
+      </div>
+
+      <div className="card">
         <h2>Best mix (cheapest store for each)</h2>
         <p className="muted small" style={{ marginTop: -6, marginBottom: 6 }}>
           Latest price at each product's cheapest store.
@@ -68,7 +107,7 @@ export default function CompareReport({ db, rows, onBack, onDone }) {
                 <div className="title" style={{ fontSize: 15 }}>{fmt(pick.norm)}</div>
                 {i > 0 && (
                   <div className="sub" style={{ color: 'var(--red)' }}>
-                    +{Math.round((pick.norm / winner.pick.norm - 1) * 100)}%
+                    +{Math.round((pick.norm / winner.pick.norm - 1) * 100)}% · +{fmtMoney(extra(pick.norm, winner.pick.norm))} / {amount} {unitLabel}
                   </div>
                 )}
               </div>
@@ -95,7 +134,7 @@ export default function CompareReport({ db, rows, onBack, onDone }) {
                   <div className="title" style={{ fontSize: 15 }}>{fmt(at.norm)}</div>
                   {i > 0 && (
                     <div className="sub" style={{ color: 'var(--red)' }}>
-                      +{Math.round((at.norm / list[0].at.norm - 1) * 100)}%
+                      +{Math.round((at.norm / list[0].at.norm - 1) * 100)}% · +{fmtMoney(extra(at.norm, list[0].at.norm))} / {amount} {unitLabel}
                     </div>
                   )}
                 </div>

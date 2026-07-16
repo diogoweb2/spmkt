@@ -99,6 +99,7 @@ Compared **only against other records of the same item + variant**, using normal
 - **The report uses each store's LATEST price per product only — never older records.**
 - Report sections:
   1. **Winner banner** — most cost-effective product overall and at which store.
+  1b. **"🚗 Worth the trip?" amount slider** — the user slides to the amount they plan to buy (0.5–30 in the display unit lb/kg or L, step 0.5; 1–50 for count items; default 5). Every `+X%` in the report then also shows the **total $ difference at that amount** (`+$Y / N lb`), and the card itself shows the winner's total cost for that amount plus how much more the priciest option would cost — so a small per-lb gap can be judged against the gas/effort of driving to another store. The amount is per-report, not persisted.
   2. **Best mix** — each product at its cheapest current store, ranked, with `+X%` vs the winner.
   3. **"If you shop at [store]"** — one card per store carrying ≥ 2 of the compared products, ranked using only that store's latest prices; products missing at that store are listed as having no price there.
 
