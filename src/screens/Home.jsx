@@ -2,8 +2,18 @@ import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
 import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import { addToRvList } from '../lib/rvlist'
+import { storeLogo } from '../lib/logos'
 import PhotoLink from '../components/PhotoLink'
 import CompareReport from '../components/CompareReport'
+
+// Color a flyer's "until <date>" by how close it is to expiring.
+const UNTIL_COLOR = { red: 'var(--red)', amber: 'var(--amber)', green: 'var(--accent)' }
+function untilUrgency(ts) {
+  const daysLeft = (ts - Date.now()) / 86400000
+  if (daysLeft <= 1) return 'red'
+  if (daysLeft <= 3) return 'amber'
+  return 'green'
+}
 
 // Home = current meat deals, grouped Beef/Pork/Chicken/Fish; ultra-processed
 // items get their own "<Type> · ultra-processed" section after the natural
@@ -196,6 +206,12 @@ export default function Home({ db, push }) {
         >
           ✕
         </button>
+        <button
+          aria-label="Select all meat types"
+          onClick={() => setTypesOff(new Set())}
+        >
+          All
+        </button>
         {MEAT_TYPES.filter((t) => groups[t]?.length).map((t) => (
           <button
             key={t}
@@ -213,6 +229,12 @@ export default function Home({ db, push }) {
             onClick={() => setStoresOff(new Set(dealStores.map((s) => s.id)))}
           >
             ✕
+          </button>
+          <button
+            aria-label="Select all stores"
+            onClick={() => setStoresOff(new Set())}
+          >
+            All
           </button>
           {dealStores.map((s) => (
             <button
@@ -276,10 +298,11 @@ export default function Home({ db, push }) {
                     {d.item.name}
                     {!comparing && <PhotoLink name={d.item.name} />}
                   </div>
-                  <div className="sub">
-                    cheapest @ {d.store.name}
-                    {d.rec.validUntil ? ` · until ${new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
-                  </div>
+                  {d.rec.validUntil && (
+                    <div className="sub" style={{ color: UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
+                      until {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </div>
+                  )}
                 </div>
                 <div className="right">
                   <div className="title">{fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit)}</div>
@@ -300,6 +323,16 @@ export default function Home({ db, push }) {
                   >
                     {{ pending: '…', ok: '✓', err: '!' }[rvState[d.item.id]] ?? '+'}
                   </span>
+                )}
+                {/* Which store this price is from — logo when we have one bundled. */}
+                {!comparing && (
+                  storeLogo(d.store.name) ? (
+                    <span className="row-logo" title={d.store.name}>
+                      <img src={storeLogo(d.store.name)} alt={d.store.name} />
+                    </span>
+                  ) : (
+                    <span className="muted small row-logo-fallback" title={d.store.name}>{d.store.name}</span>
+                  )
                 )}
               </button>
               )

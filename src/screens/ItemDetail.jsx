@@ -5,6 +5,7 @@ import {
 } from '../lib/analysis'
 import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel } from '../lib/units'
 import { effectivePrice } from '../lib/cashback'
+import { addToRvList } from '../lib/rvlist'
 import MonthlyChart from '../components/MonthlyChart'
 import UnitToggle from '../components/UnitToggle'
 import PhotoLink from '../components/PhotoLink'
@@ -14,6 +15,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [pickedVariant, setPickedVariant] = useState(view.variant ?? null)
   const [compareSel, setCompareSel] = useState([])
+  const [rvState, setRvState] = useState({})
   if (!item) return null
 
   const allRecs = itemRecords(db, item.id)
@@ -53,6 +55,24 @@ export default function ItemDetail({ db, update, push, pop, view }) {
     setCompareSel((sel) =>
       sel.includes(storeId) ? sel.filter((s) => s !== storeId) : [...sel.slice(-1), storeId],
     )
+  }
+
+  async function sendToRv(store, rec, norm) {
+    setRvState((s) => ({ ...s, [store.id]: 'pending' }))
+    try {
+      await addToRvList({
+        storeName: store.name,
+        itemName: item.name,
+        priceLabel: fmtDisplay(norm, item.kind, wu),
+        validUntil: rec.validUntil ?? undefined,
+      })
+      setRvState((s) => ({ ...s, [store.id]: 'ok' }))
+      navigator.vibrate?.(15)
+    } catch (e) {
+      console.error('addToRvList failed', e)
+      setRvState((s) => ({ ...s, [store.id]: 'err' }))
+      setTimeout(() => setRvState((s) => ({ ...s, [store.id]: undefined })), 2500)
+    }
   }
 
   return (
@@ -140,6 +160,18 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                     <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? ` · ${flyerInfo(rec).text}` : ''}</div>
                   </div>
                   <div className="right title">{fmt(norm)}</div>
+                  <span
+                    role="button"
+                    aria-label="Add to RV Groceries list"
+                    className={`rv-add${rvState[store.id] ? ' on' : ''}`}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!rvState[store.id]) sendToRv(store, rec, norm)
+                    }}
+                  >
+                    {{ pending: '…', ok: '✓', err: '!' }[rvState[store.id]] ?? '+'}
+                  </span>
                 </button>
               )
             })}
