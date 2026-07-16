@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { exportJSON, DEFAULT_DB } from '../lib/db'
 import { UNITS } from '../lib/units'
 import { unignore } from '../lib/ignore'
+import { addWhitelistRule, removeWhitelistRule, whitelistRules } from '../lib/whitelist'
 import { cashbackEnabled } from '../lib/cashback'
 import { enablePush, pushSupported } from '../lib/push'
 import Notes from '../components/Notes'
@@ -19,6 +20,7 @@ export default function Settings({ db, update, onSignOut }) {
   const [renaming, setRenaming] = useState(null)
   const [renameVal, setRenameVal] = useState('')
   const [pushOk, setPushOk] = useState(null) // null = unknown, true/false = supported
+  const [wlText, setWlText] = useState('')
   const [pushMsg, setPushMsg] = useState('')
   const [pushing, setPushing] = useState(false)
 
@@ -134,6 +136,69 @@ export default function Settings({ db, update, onSignOut }) {
           </div>
         </div>
       )}
+
+      <div className="card">
+        <h2>Import whitelist ✅</h2>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          When on, the weekly flyer import only brings in products matching these keywords —
+          <b> meat is always imported</b> (ignore unwanted meat from the Home list). Plain
+          language works, exceptions included: “Yogurt but only Greek style”, “Chips but not
+          Pringles”, “all fruits but not organic”.
+        </p>
+        <label className="row" style={{ cursor: 'pointer', gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={!!db.whitelistOn}
+            onChange={(e) => update((d) => { d.whitelistOn = e.target.checked })}
+          />
+          <span className="title" style={{ fontSize: 15 }}>Only import whitelisted products</span>
+        </label>
+        {db.whitelistOn && whitelistRules(db).length === 0 && (
+          <p className="muted small" style={{ marginTop: 8 }}>
+            No keywords yet — the import still brings in everything until you add one.
+          </p>
+        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <input
+            type="text"
+            placeholder="e.g. Chips but not Pringles"
+            value={wlText}
+            onChange={(e) => setWlText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && wlText.trim()) {
+                update((d) => addWhitelistRule(d, wlText))
+                setWlText('')
+              }
+            }}
+            style={{ flex: 1, padding: 10, fontSize: 15 }}
+          />
+          <button
+            className="btn ghost"
+            disabled={!wlText.trim()}
+            onClick={() => {
+              update((d) => addWhitelistRule(d, wlText))
+              setWlText('')
+            }}
+          >
+            Add
+          </button>
+        </div>
+        {whitelistRules(db).length > 0 && (
+          <div className="list" style={{ marginTop: 8 }}>
+            {whitelistRules(db).map((r) => (
+              <div key={r.id} className="row" style={{ cursor: 'default' }}>
+                <div className="grow title" style={{ whiteSpace: 'normal', fontSize: 15 }}>{r.text}</div>
+                <button
+                  className="btn small ghost"
+                  onClick={() => update((d) => removeWhitelistRule(d, r.id))}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="card">
         <h2>Card cashback 💳</h2>

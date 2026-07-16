@@ -63,7 +63,7 @@ async function downloadFirstPage(store, dir) {
 
 // ---------- claude extraction ----------
 
-const EXTRACT_PROMPT = (imgPath, existingNames, ignoredNames) => `Use the Read tool to open the image file ${imgPath} — it is a supermarket flyer page and you CAN view images via the Read tool. Then extract every grocery deal on it.
+const EXTRACT_PROMPT = (imgPath, existingNames, ignoredNames, whitelist) => `Use the Read tool to open the image file ${imgPath} — it is a supermarket flyer page and you CAN view images via the Read tool. Then extract every grocery deal on it.
 
 Output ONLY a JSON array (no prose, no markdown fence). Each element:
 {"name": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null}
@@ -85,12 +85,19 @@ Rules:
   · "Royale Bathroom Tissue" -> the type is bathroom tissue: omit all bathroom tissue, any brand.
   · "Robin Hood All Purpose Flour" -> the type is flour: omit all flour (all-purpose, bread, whole wheat, cake, any brand) — but KEEP other Robin Hood products such as oats.
   · "Farmer's Market Pies" -> the type is pies: omit all pies, any brand or flavour.
-  Do not over-generalize either: a genuinely different product that merely shares a brand, a word or a shelf stays IN (paper towels are not bathroom tissue; a cheesecake is not a pie; pizza pockets are not flour). If in doubt, keep the product.` : ''}`
+  Do not over-generalize either: a genuinely different product that merely shares a brand, a word or a shelf stays IN (paper towels are not bathroom tissue; a cheesecake is not a pie; pizza pockets are not flour). If in doubt, keep the product.` : ''}${whitelist.length ? `
+- WHITELIST — the user only wants these kinds of products (plus all meat): ${JSON.stringify(whitelist)}
+  Apply this to every NON-MEAT product: include it only if it matches at least one rule; omit every other non-meat product. Rules are plain language and may carry exceptions — honor them exactly:
+  · "Yogurt but only Greek style" -> include Greek yogurt of any brand, omit every other yogurt.
+  · "Chips but not Pringles" -> include chips of any brand except Pringles.
+  · "all fruits but not organic" -> include fruit, omit anything labeled organic.
+  Meat/fish/poultry (category "meat") are EXEMPT: always include them regardless of the whitelist.
+  If an IGNORED PRODUCTS rule above conflicts with the whitelist, the ignore wins: an ignored product type stays out.` : ''}`
 
-function extractProducts(imgPath, storeName, existingNames, ignoredNames) {
+function extractProducts(imgPath, storeName, existingNames, ignoredNames, whitelist) {
   const claude = findClaude()
   log(`${storeName}: extracting with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath, existingNames, ignoredNames), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
+  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPath, existingNames, ignoredNames, whitelist), '--allowedTools', 'Read', '--model', 'claude-sonnet-5'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     timeout: 10 * 60 * 1000,
@@ -191,6 +198,7 @@ for (const store of stores) {
   try {
     let existingNames = []
     let ignoredNames = []
+    let whitelist = []
     if (!DRY_RUN) {
       const { db } = await openFamilyDoc(env)
       // Already imported this week? Skip before spending a download + tokens.
@@ -205,10 +213,13 @@ for (const store of stores) {
       }
       existingNames = db?.items?.map((i) => i.name) ?? []
       ignoredNames = db?.ignored?.map((g) => g.name) ?? []
+      // Import whitelist (Settings): only active when toggled on AND non-empty
+      // — never lets an empty list silently import nothing. Meat is exempt.
+      if (db?.whitelistOn && db?.whitelist?.length) whitelist = db.whitelist.map((r) => r.text)
     }
     const dl = await downloadFirstPage(store, workDir)
     imgs.push(dl.file)
-    const products = extractProducts(dl.file, store.name, existingNames, ignoredNames)
+    const products = extractProducts(dl.file, store.name, existingNames, ignoredNames, whitelist)
     log(`${store.name}: extracted ${products.length} products`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
