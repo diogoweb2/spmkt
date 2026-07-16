@@ -49,7 +49,7 @@ function Chips({ children, style }) {
   )
 }
 
-export default function Home({ db, push }) {
+export default function Home({ db, update, push }) {
   const groups = useMemo(() => meatDeals(db), [db])
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
   const [storesOff, setStoresOff] = useState(() => new Set())
@@ -62,9 +62,15 @@ export default function Home({ db, push }) {
   const [selected, setSelected] = useState([]) // item ids
   const [report, setReport] = useState(false)
   const press = useRef({ timer: null, long: false })
-  // Per-item state of the "＋ send to RV Groceries" button: 'pending' → '✓'
-  // once the deal landed on the store's list in the other app ('err' resets).
+  // Transient state of the "＋ send to RV Groceries" button ('pending'/'err').
+  // A successful send is persisted in db.rvSent keyed by (item, record), so
+  // the ✓ survives reloads and stays until a new record becomes the deal.
+  // One-way only: checking/removing the item in the RV app never syncs back.
   const [rvState, setRvState] = useState({})
+  const rvSent = useMemo(
+    () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
+    [db.rvSent],
+  )
 
   async function sendToRv(d) {
     setRvState((s) => ({ ...s, [d.item.id]: 'pending' }))
@@ -75,7 +81,17 @@ export default function Home({ db, push }) {
         priceLabel: fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit),
         validUntil: d.rec.validUntil ?? undefined,
       })
-      setRvState((s) => ({ ...s, [d.item.id]: 'ok' }))
+      setRvState((s) => ({ ...s, [d.item.id]: undefined }))
+      update((next) => {
+        // Prune markers whose record expired or is gone — their ✓ is moot
+        // (the deal left Home), so they'd only accumulate forever.
+        const now = Date.now()
+        next.rvSent = (next.rvSent ?? []).filter((s) => {
+          const rec = next.records.find((r) => r.id === s.recId)
+          return rec && (rec.validUntil == null || rec.validUntil >= now)
+        })
+        next.rvSent.push({ itemId: d.item.id, recId: d.rec.id, ts: now })
+      })
       navigator.vibrate?.(15)
     } catch (e) {
       console.error('addToRvList failed', e)
@@ -317,20 +333,24 @@ export default function Home({ db, push }) {
                 </div>
                 {/* Send the deal to the RV Groceries shopping list (rvlist.js).
                     span, not button: rows are already buttons. */}
-                {!comparing && (
-                  <span
-                    role="button"
-                    aria-label="Add to RV Groceries list"
-                    className={`rv-add${rvState[d.item.id] ? ' on' : ''}`}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (!rvState[d.item.id]) sendToRv(d)
-                    }}
-                  >
-                    {{ pending: '…', ok: '✓', err: '!' }[rvState[d.item.id]] ?? '+'}
-                  </span>
-                )}
+                {!comparing && (() => {
+                  const st = rvState[d.item.id] ??
+                    (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)
+                  return (
+                    <span
+                      role="button"
+                      aria-label="Add to RV Groceries list"
+                      className={`rv-add${st ? ' on' : ''}`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (!st) sendToRv(d)
+                      }}
+                    >
+                      {{ pending: '…', ok: '✓', err: '!' }[st] ?? '+'}
+                    </span>
+                  )
+                })()}
               </button>
               )
             })}
