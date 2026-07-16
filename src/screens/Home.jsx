@@ -298,11 +298,18 @@ export default function Home({ db, push }) {
                     {d.item.name}
                     {!comparing && <PhotoLink name={d.item.name} />}
                   </div>
-                  {d.rec.validUntil && (
-                    <div className="sub" style={{ color: UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
-                      until {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                    </div>
-                  )}
+                  <div className="sub row-store">
+                    {storeLogo(d.store.name) ? (
+                      <img className="row-logo" src={storeLogo(d.store.name)} alt={d.store.name} title={d.store.name} />
+                    ) : (
+                      <span>{d.store.name}</span>
+                    )}
+                    {d.rec.validUntil && (
+                      <span style={{ color: UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
+                        until {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="right">
                   <div className="title">{fmtDisplay(d.norm, d.item.kind, db.displayWeightUnit)}</div>
@@ -323,16 +330,6 @@ export default function Home({ db, push }) {
                   >
                     {{ pending: '…', ok: '✓', err: '!' }[rvState[d.item.id]] ?? '+'}
                   </span>
-                )}
-                {/* Which store this price is from — logo when we have one bundled. */}
-                {!comparing && (
-                  storeLogo(d.store.name) ? (
-                    <span className="row-logo" title={d.store.name}>
-                      <img src={storeLogo(d.store.name)} alt={d.store.name} />
-                    </span>
-                  ) : (
-                    <span className="muted small row-logo-fallback" title={d.store.name}>{d.store.name}</span>
-                  )
                 )}
               </button>
               )
