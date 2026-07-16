@@ -53,39 +53,42 @@ export function dealRating(item, norm) {
   return 'bad'
 }
 
-// Current best deal per meat item, grouped by meat type. A deal is each
-// store's latest non-expired comparable record; the cheapest store wins.
-// Records with no validUntil (manual entries) never expire.
+// An item's current best deal: each store's latest non-expired comparable
+// record; the cheapest store wins. Records with no validUntil (manual
+// entries) never expire. null when the item has no live comparable price.
+function bestDeal(db, item, now) {
+  const recs = itemRecords(db, item.id).filter(
+    (r) => isComparable(item, r) && (r.validUntil == null || r.validUntil >= now),
+  )
+  const byStore = new Map()
+  for (const r of recs) {
+    if (!byStore.has(r.storeId)) byStore.set(r.storeId, r) // recs sorted desc -> latest wins
+  }
+  let best = null
+  for (const rec of byStore.values()) {
+    const norm = recordNorm(rec, item, db)
+    if (norm != null && (!best || norm < best.norm)) best = { rec, norm }
+  }
+  if (!best) return null
+  const store = db.stores.find((s) => s.id === best.rec.storeId)
+  if (!store) return null
+  return { item, store, rec: best.rec, norm: best.norm }
+}
+
+// Current best deal per meat item, grouped by meat type.
 export function meatDeals(db) {
   const now = Date.now()
   const groups = {}
   for (const item of db.items) {
     if (item.category !== 'meat') continue
-    const recs = itemRecords(db, item.id).filter(
-      (r) => isComparable(item, r) && (r.validUntil == null || r.validUntil >= now),
-    )
-    const byStore = new Map()
-    for (const r of recs) {
-      if (!byStore.has(r.storeId)) byStore.set(r.storeId, r) // recs sorted desc -> latest wins
-    }
-    let best = null
-    for (const rec of byStore.values()) {
-      const norm = recordNorm(rec, item, db)
-      if (norm != null && (!best || norm < best.norm)) best = { rec, norm }
-    }
+    const best = bestDeal(db, item, now)
     if (!best) continue
-    const store = db.stores.find((s) => s.id === best.rec.storeId)
-    if (!store) continue
-    const rating = dealRating(item, best.norm)
     const type = MEAT_TYPES.includes(item.meatType)
       ? item.meatType
       : guessMeatType(item.name) ?? 'other'
     ;(groups[type] ??= []).push({
-      item,
-      store,
-      rec: best.rec,
-      norm: best.norm,
-      rating,
+      ...best,
+      rating: dealRating(item, best.norm),
       ultra: item.processing === 'ultra',
     })
   }
@@ -94,4 +97,19 @@ export function meatDeals(db) {
     list.sort((a, b) => (a.ultra === b.ultra ? a.norm - b.norm : a.ultra ? 1 : -1))
   }
   return groups
+}
+
+// Current best deal per non-meat item, cheapest first — Home's 🛒 Groceries
+// view. Non-meat items have no classification: rating stays null (no market
+// data) and there are no meat-type/processing groupings.
+export function groceryDeals(db) {
+  const now = Date.now()
+  const out = []
+  for (const item of db.items) {
+    if (item.category === 'meat') continue
+    const best = bestDeal(db, item, now)
+    if (best) out.push({ ...best, rating: dealRating(item, best.norm), ultra: false })
+  }
+  out.sort((a, b) => a.norm - b.norm)
+  return out
 }

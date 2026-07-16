@@ -133,7 +133,7 @@ Compared **only against other records of the same item + variant**, using normal
 
 ## 10. Home & Location screens
 
-- **Home** (🏠 tab) is the **Meat deals** page (§13). When there are no qualifying deals it shows an empty state explaining deals come from the weekly flyer import.
+- **Home** (🏠 tab) is the **deals** page (§13), with a 🥩 Meat / 🛒 Groceries mode toggle (chips under the title, default Meat; reset on reload). When there are no qualifying deals it shows an empty state explaining deals come from the weekly flyer import.
 - **Location** (📍 tab, "Where are you?") holds the store grid. Known chains show their bundled logo on a white chip over the brand color (`src/lib/logos.js`, matched loosely by name); unknown stores show their name. Each button shows its logged-price count; tapping a store sets `currentStoreId` and opens price logging there. "+ Add store" creates a store (default unit lb) and jumps straight into logging a price there.
 
 ## 11. Bugs & ideas (Settings)
@@ -171,6 +171,14 @@ Code: `src/lib/meat.js` (grouping + ratings), `scripts/flyers/classify-meat.mjs`
 ### Classification pass (`classify-meat.mjs`)
 - Runs automatically at the **end of every weekly flyer import** (`run.mjs`), and can run standalone (`--all` reclassifies everything, `--new` / `npm run classify:new` classifies only items with no `market` data yet — for right after adding items manually, `--dry-run` doesn't save). A launchd job (`com.spmkt.classify-new`, plist in `scripts/flyers/`) runs `--new` **daily at 9:30** so manually added items get deal thresholds by the next morning; it's a no-op (no LLM call) when nothing is unlabeled.
 - Classifies meat items with any field missing and refreshes `market` older than 6 days, in one Claude (headless, WebSearch-enabled) call; matches results back by case-insensitive name and validates enums/thresholds before saving.
+
+### Deals page modes (Home)
+- Two modes, toggled by 🥩 Meat / 🛒 Groceries chips under the title (default Meat, not persisted).
+- **🛒 Groceries** = one flat list (no section headers) of every **non-meat** item's current best deal, same deal definition as meat (cheapest store's latest non-expired comparable record). Non-meat items have no `market`/`meatType`/`processing`, so the grocery view has **no rating chips, no type chips, no processing button, and no 🔥 Best deal sort** — only the store chips and $ Cheapest / A–Z sort. Rows show no rating badge.
+- Long-press multi-select (compare mode) and the ➕ RV Groceries button work identically in both modes.
+
+### Don't import anymore (Home multi-select)
+- In Home's long-press multi-select mode, a **🚫 Don't import** button (enabled at ≥ 1 selected) runs the same **Delete & ignore** as the Items tab (§9): after a confirmation dialog, the selected items and all their prices are deleted and their names are appended to `db.ignored`, so future flyer imports skip that product type (any brand). Undo in Settings ("Stop ignoring"; deleted prices are not restored).
 
 ### Meat deals section (Home)
 - Groups: **Beef, Pork, Chicken, Fish, Other meat**. Meat with no `meatType` yet gets an **instant keyword guess from its name** (`guessMeatType` in `src/lib/meat.js`, also stamped on manually created meat items) so e.g. "Chicken whole" files under Chicken right away; if no keyword matches it falls under Other until the weekly LLM pass classifies it. Per meat type, `natural` items form one section and `ultra` items form a separate **"<Type> · ultra-processed"** section right after it (no per-row ultra-processed chip). Empty sections are hidden.

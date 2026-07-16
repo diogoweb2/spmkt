@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
-import { meatDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
+import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
+import { ignoreItems } from '../lib/ignore'
 import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
 import PhotoLink from '../components/PhotoLink'
@@ -15,11 +16,13 @@ function untilUrgency(ts) {
   return 'green'
 }
 
-// Home = current meat deals, grouped Beef/Pork/Chicken/Fish; ultra-processed
-// items get their own "<Type> · ultra-processed" section after the natural
-// one. Expired flyer prices never show. Multiselect chips filter by store and
-// deal rating (default: excellent + good, all stores). Store picking lives in
-// the Location tab.
+// Home = current deals. 🥩 Meat mode groups Beef/Pork/Chicken/Fish; ultra-
+// processed items get their own "<Type> · ultra-processed" section after the
+// natural one, with rating/type/processing filters (rating default:
+// excellent + good). 🛒 Groceries mode is one flat list of non-meat deals
+// with only the store filter and $/A–Z sort. Expired flyer prices never show.
+// Long-press → multi-select for ⚖️ Compare or 🚫 Don't import (delete &
+// ignore). Store picking lives in the Location tab.
 const RATING_KEYS = Object.keys(RATING)
 
 // Horizontally scrollable chip row; wheel + drag scrolling for mouse users
@@ -51,6 +54,11 @@ function Chips({ children, style }) {
 
 export default function Home({ db, update, push }) {
   const groups = useMemo(() => meatDeals(db), [db])
+  const grocery = useMemo(() => groceryDeals(db), [db])
+  // '🥩 meat' (classified deals) vs '🛒 grocery' (everything else; no meat-type,
+  // rating or processing filters — non-meat items have no market data).
+  const [mode, setMode] = useState('meat')
+  const meat = mode === 'meat'
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
   const [storesOff, setStoresOff] = useState(() => new Set())
   const [typesOff, setTypesOff] = useState(() => new Set())
@@ -61,6 +69,7 @@ export default function Home({ db, update, push }) {
   const [comparing, setComparing] = useState(false)
   const [selected, setSelected] = useState([]) // item ids
   const [report, setReport] = useState(false)
+  const [confirmIgnore, setConfirmIgnore] = useState(false)
   const press = useRef({ timer: null, long: false })
   // Transient state of the "＋ send to RV Groceries" button ('pending'/'err').
   // A successful send is persisted in db.rvSent keyed by (item, record), so
@@ -100,11 +109,13 @@ export default function Home({ db, update, push }) {
     }
   }
 
+  const allDeals = meat ? MEAT_TYPES.flatMap((t) => groups[t] ?? []) : grocery
+
   const dealStores = useMemo(() => {
     const map = new Map()
-    for (const t of MEAT_TYPES) for (const d of groups[t] ?? []) map.set(d.store.id, d.store)
+    for (const d of allDeals) map.set(d.store.id, d.store)
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [groups])
+  }, [groups, grocery, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (set, setSet, key) => {
     const next = new Set(set)
@@ -114,10 +125,12 @@ export default function Home({ db, update, push }) {
   }
 
   // Items with no market data (rating null) always pass the rating filter.
+  // Grocery mode only filters by store (its items carry no rating/processing).
   const show = (d) =>
     !storesOff.has(d.store.id) &&
-    (proc === 'all' || (proc === 'ultra') === d.ultra) &&
-    (d.rating == null || ratingsOn.has(d.rating))
+    (!meat ||
+      ((proc === 'all' || (proc === 'ultra') === d.ultra) &&
+        (d.rating == null || ratingsOn.has(d.rating))))
 
   // 'deal' = biggest discount vs the item's market avg price; no-market last.
   const dealScore = (d) => (d.item.market ? d.norm / d.item.market.avg : Infinity)
@@ -129,18 +142,23 @@ export default function Home({ db, update, push }) {
 
   // One section per meat type for natural items, followed by a separate
   // "<Type> · ultra-processed" section when the type has ultra items.
-  const sections = MEAT_TYPES.flatMap((t) => {
-    if (typesOff.has(t)) return []
-    const list = (groups[t] ?? []).filter(show).sort(cmp)
-    const natural = list.filter((d) => !d.ultra)
-    const ultra = list.filter((d) => d.ultra)
-    const out = []
-    if (natural.length) out.push({ key: t, label: MEAT_TYPE_LABEL[t], list: natural })
-    if (ultra.length) out.push({ key: `${t}-ultra`, label: `${MEAT_TYPE_LABEL[t]} · ultra-processed`, list: ultra })
-    return out
-  })
+  // Grocery mode is one flat, unlabeled section.
+  const sections = meat
+    ? MEAT_TYPES.flatMap((t) => {
+        if (typesOff.has(t)) return []
+        const list = (groups[t] ?? []).filter(show).sort(cmp)
+        const natural = list.filter((d) => !d.ultra)
+        const ultra = list.filter((d) => d.ultra)
+        const out = []
+        if (natural.length) out.push({ key: t, label: MEAT_TYPE_LABEL[t], list: natural })
+        if (ultra.length) out.push({ key: `${t}-ultra`, label: `${MEAT_TYPE_LABEL[t]} · ultra-processed`, list: ultra })
+        return out
+      })
+    : (() => {
+        const list = grocery.filter(show).sort(cmp)
+        return list.length ? [{ key: 'grocery', label: null, list }] : []
+      })()
 
-  const allDeals = MEAT_TYPES.flatMap((t) => groups[t] ?? [])
   const selectedDeals = allDeals.filter((d) => selected.includes(d.item.id))
   const compareKind = selectedDeals[0]?.item.kind ?? null
   // CompareReport rows: variant null = compare across all the item's records
@@ -171,6 +189,20 @@ export default function Home({ db, update, push }) {
     setComparing(false)
     setSelected([])
     setReport(false)
+    setConfirmIgnore(false)
+  }
+
+  // "Don't import anymore": same delete-&-ignore as the Items tab — removes
+  // the items and their prices, and the flyer import skips that product type.
+  function doIgnore() {
+    const ids = selected
+    update((d) => ignoreItems(d, ids))
+    exitCompare()
+  }
+
+  function switchMode(m) {
+    setMode(m)
+    if (m !== 'meat' && sort === 'deal') setSort('price') // no market data → no 🔥 sort
   }
 
   if (report && compareRows.length >= 2) {
@@ -187,8 +219,8 @@ export default function Home({ db, update, push }) {
   return (
     <div className="screen" style={comparing ? { paddingBottom: 170 } : undefined}>
       <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1>{comparing ? 'Pick items ⚖️' : '🥩 Meat deals'}</h1>
-        {!comparing && (
+        <h1>{comparing ? 'Pick items ⚖️' : meat ? '🥩 Meat deals' : '🛒 Grocery deals'}</h1>
+        {!comparing && meat && (
           <button
             className="btn small ghost"
             onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
@@ -204,40 +236,51 @@ export default function Home({ db, update, push }) {
         </p>
       )}
 
-      <Chips style={{ marginBottom: 8 }}>
-        {RATING_KEYS.map((r) => (
+      {!comparing && (
+        <Chips style={{ marginBottom: 8 }}>
+          <button className={meat ? 'on' : ''} onClick={() => switchMode('meat')}>🥩 Meat</button>
+          <button className={meat ? '' : 'on'} onClick={() => switchMode('grocery')}>🛒 Groceries</button>
+        </Chips>
+      )}
+
+      {meat && (
+        <Chips style={{ marginBottom: 8 }}>
+          {RATING_KEYS.map((r) => (
+            <button
+              key={r}
+              className={ratingsOn.has(r) ? 'on' : ''}
+              onClick={() => toggle(ratingsOn, setRatingsOn, r)}
+            >
+              {RATING[r].label.replace(' deal', '')}
+            </button>
+          ))}
+        </Chips>
+      )}
+      {meat && (
+        <Chips style={{ marginBottom: 8 }}>
           <button
-            key={r}
-            className={ratingsOn.has(r) ? 'on' : ''}
-            onClick={() => toggle(ratingsOn, setRatingsOn, r)}
+            aria-label="Clear meat type selection"
+            onClick={() => setTypesOff(new Set(MEAT_TYPES))}
           >
-            {RATING[r].label.replace(' deal', '')}
+            ✕
           </button>
-        ))}
-      </Chips>
-      <Chips style={{ marginBottom: 8 }}>
-        <button
-          aria-label="Clear meat type selection"
-          onClick={() => setTypesOff(new Set(MEAT_TYPES))}
-        >
-          ✕
-        </button>
-        <button
-          aria-label="Select all meat types"
-          onClick={() => setTypesOff(new Set())}
-        >
-          All
-        </button>
-        {MEAT_TYPES.filter((t) => groups[t]?.length).map((t) => (
           <button
-            key={t}
-            className={typesOff.has(t) ? '' : 'on'}
-            onClick={() => toggle(typesOff, setTypesOff, t)}
+            aria-label="Select all meat types"
+            onClick={() => setTypesOff(new Set())}
           >
-            {MEAT_TYPE_LABEL[t]}
+            All
           </button>
-        ))}
-      </Chips>
+          {MEAT_TYPES.filter((t) => groups[t]?.length).map((t) => (
+            <button
+              key={t}
+              className={typesOff.has(t) ? '' : 'on'}
+              onClick={() => toggle(typesOff, setTypesOff, t)}
+            >
+              {MEAT_TYPE_LABEL[t]}
+            </button>
+          ))}
+        </Chips>
+      )}
       {dealStores.length > 1 && (
         <Chips style={{ marginBottom: 8 }}>
           <button
@@ -266,7 +309,7 @@ export default function Home({ db, update, push }) {
 
       <Chips style={{ marginBottom: 8 }}>
         <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)', flex: '0 0 auto' }}>Sort</span>
-        {[['price', '$ Cheapest'], ['deal', '🔥 Best deal'], ['name', 'A–Z']].map(([k, label]) => (
+        {[['price', '$ Cheapest'], ...(meat ? [['deal', '🔥 Best deal']] : []), ['name', 'A–Z']].map(([k, label]) => (
           <button key={k} className={sort === k ? 'on' : ''} onClick={() => setSort(k)}>
             {label}
           </button>
@@ -275,16 +318,18 @@ export default function Home({ db, update, push }) {
 
       {sections.length === 0 && (
         <div className="empty" style={{ padding: 32 }}>
-          No meat deals match the filters.
+          No {meat ? 'meat' : 'grocery'} deals match the filters.
           <div className="sub" style={{ marginTop: 6 }}>
-            Deals appear here after the weekly flyer import finds prices below the usual Toronto market price.
+            {meat
+              ? 'Deals appear here after the weekly flyer import finds prices below the usual Toronto market price.'
+              : 'Non-meat products with a current price show up here after the weekly flyer import (or a manual entry).'}
           </div>
         </div>
       )}
 
       {sections.map(({ key, label, list }) => (
         <div key={key} style={{ marginTop: 10 }}>
-          <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>
+          {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
           <div className="card list" style={{ padding: '2px 14px' }}>
             {list.map((d) => {
               const isSel = selected.includes(d.item.id)
@@ -373,9 +418,36 @@ export default function Home({ db, update, push }) {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn ghost" onClick={exitCompare}>Cancel</button>
+            <button
+              className="btn danger"
+              disabled={selectedDeals.length === 0}
+              onClick={() => setConfirmIgnore(true)}
+            >
+              🚫 Don't import
+            </button>
             <button className="btn" disabled={selectedDeals.length < 2} onClick={() => setReport(true)}>
               Compare {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
             </button>
+          </div>
+        </div>
+      )}
+
+      {confirmIgnore && (
+        <div className="modal-backdrop" onClick={() => setConfirmIgnore(false)}>
+          <div className="card" style={{ width: 'min(92vw, 400px)' }} onClick={(e) => e.stopPropagation()}>
+            <h2>Don't import anymore 🚫</h2>
+            <p className="muted small">
+              {selectedDeals.map((d) => d.item.name).join(', ')}
+            </p>
+            <ul className="muted small" style={{ paddingLeft: 18, margin: '4px 0 12px' }}>
+              <li>Removes the product{selected.length === 1 ? '' : 's'} and all saved prices — this can't be undone.</li>
+              <li>The weekly flyer import will skip this <b>kind</b> of product from now on, any brand.</li>
+              <li>Undo the ignore later in Settings.</li>
+            </ul>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn ghost" onClick={() => setConfirmIgnore(false)}>Cancel</button>
+              <button className="btn danger" onClick={doIgnore}>Don't import</button>
+            </div>
           </div>
         </div>
       )}
