@@ -21,8 +21,9 @@ function untilUrgency(ts) {
 // natural one, with rating/type/processing filters (rating default:
 // excellent + good). 🛒 Groceries mode is one flat list of non-meat deals
 // with only the store filter and $/A–Z sort. Expired flyer prices never show.
-// Long-press → multi-select for ⚖️ Compare or 🚫 Don't import (delete &
-// ignore). Store picking lives in the Location tab.
+// Two multi-select modes: ⚖️ Compare button (same-kind only) vs hold-to-
+// select any row (🚫 Don't import — delete & ignore, no kind restriction).
+// Store picking lives in the Location tab.
 const RATING_KEYS = Object.keys(RATING)
 
 // Horizontally scrollable chip row; wheel + drag scrolling for mouse users
@@ -64,9 +65,11 @@ export default function Home({ db, update, push }) {
   const [typesOff, setTypesOff] = useState(() => new Set())
   const [proc, setProc] = useState('all') // cycles all -> natural -> ultra
   const [sort, setSort] = useState('price') // 'price' | 'deal' | 'name'
-  // Long-press a deal row to enter compare mode (same ⚖️ tool as the Items tab);
-  // tap more rows to select, tray at the bottom runs the report.
+  // Two separate multi-select modes (same split as the Items tab):
+  // - "comparing": explicit ⚖️ Compare button, same-kind only, tray runs the report.
+  // - "selecting": hold a row, any kind, tray only offers 🚫 Don't import (ignore).
   const [comparing, setComparing] = useState(false)
+  const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState([]) // item ids
   const [report, setReport] = useState(false)
   const [confirmIgnore, setConfirmIgnore] = useState(false)
@@ -165,11 +168,11 @@ export default function Home({ db, update, push }) {
   const compareRows = selectedDeals.map((d) => ({ item: d.item, variant: null, label: '', key: d.item.id }))
 
   function holdStart(d) {
-    if (comparing) return
+    if (comparing || selecting) return
     press.current.long = false
     press.current.timer = setTimeout(() => {
       press.current.long = true
-      setComparing(true)
+      setSelecting(true)
       setSelected([d.item.id])
       navigator.vibrate?.(20)
     }, 450)
@@ -189,6 +192,11 @@ export default function Home({ db, update, push }) {
     setComparing(false)
     setSelected([])
     setReport(false)
+  }
+
+  function exitSelect() {
+    setSelecting(false)
+    setSelected([])
     setConfirmIgnore(false)
   }
 
@@ -197,7 +205,7 @@ export default function Home({ db, update, push }) {
   function doIgnore() {
     const ids = selected
     update((d) => ignoreItems(d, ids))
-    exitCompare()
+    exitSelect()
   }
 
   function switchMode(m) {
@@ -217,26 +225,39 @@ export default function Home({ db, update, push }) {
   }
 
   return (
-    <div className="screen" style={comparing ? { paddingBottom: 170 } : undefined}>
+    <div className="screen" style={comparing || selecting ? { paddingBottom: 170 } : undefined}>
       <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1>{comparing ? 'Pick items ⚖️' : meat ? '🥩 Meat deals' : '🛒 Grocery deals'}</h1>
-        {!comparing && meat && (
-          <button
-            className="btn small ghost"
-            onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
-          >
-            {proc === 'all' ? 'All' : PROCESSING_LABEL[proc]}
-          </button>
+        <h1>{comparing ? 'Pick items ⚖️' : selecting ? 'Selected items' : meat ? '🥩 Meat deals' : '🛒 Grocery deals'}</h1>
+        {!comparing && !selecting && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            {meat && (
+              <button
+                className="btn small ghost"
+                onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
+              >
+                {proc === 'all' ? 'All' : PROCESSING_LABEL[proc]}
+              </button>
+            )}
+            {allDeals.length >= 2 && (
+              <button className="btn small ghost" onClick={() => setComparing(true)}>⚖️ Compare</button>
+            )}
+          </div>
         )}
       </div>
 
       {comparing && (
         <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
-          Tap the deals you want to compare.
+          Tap the deals you want to compare — only same-type items (weight with weight).
         </p>
       )}
 
-      {!comparing && (
+      {selecting && (
+        <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
+          Tap more deals to select them, then 🚫 Don't import.
+        </p>
+      )}
+
+      {!comparing && !selecting && (
         <Chips style={{ marginBottom: 8 }}>
           <button className={meat ? 'on' : ''} onClick={() => switchMode('meat')}>🥩 Meat</button>
           <button className={meat ? '' : 'on'} onClick={() => switchMode('grocery')}>🛒 Groceries</button>
@@ -333,6 +354,8 @@ export default function Home({ db, update, push }) {
           <div className="card list" style={{ padding: '2px 14px' }}>
             {list.map((d) => {
               const isSel = selected.includes(d.item.id)
+              // Kind restriction only applies to ⚖️ Compare (same-kind report);
+              // hold-to-select for ignoring has no such constraint.
               const disabled = comparing && compareKind && d.item.kind !== compareKind && !isSel
               return (
               <button
@@ -350,14 +373,15 @@ export default function Home({ db, update, push }) {
                 onClick={() => {
                   if (press.current.long) { press.current.long = false; return }
                   if (comparing) return !disabled && toggleSelect(d)
+                  if (selecting) return toggleSelect(d)
                   push({ name: 'item', itemId: d.item.id })
                 }}
               >
                 <div className="grow">
                   <div className="title">
-                    {comparing ? (isSel ? '☑️ ' : '⬜ ') : ''}
+                    {(comparing || selecting) ? (isSel ? '☑️ ' : '⬜ ') : ''}
                     {d.item.name}
-                    {!comparing && <PhotoLink name={d.item.name} />}
+                    {!comparing && !selecting && <PhotoLink name={d.item.name} />}
                   </div>
                   <div className="sub row-store">
                     {storeLogo(d.store.name) ? (
@@ -378,7 +402,7 @@ export default function Home({ db, update, push }) {
                 </div>
                 {/* Send the deal to the RV Groceries shopping list (rvlist.js).
                     span, not button: rows are already buttons. */}
-                {!comparing && (() => {
+                {!comparing && !selecting && (() => {
                   const st = rvState[d.item.id] ??
                     (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)
                   return (
@@ -418,15 +442,34 @@ export default function Home({ db, update, push }) {
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn ghost" onClick={exitCompare}>Cancel</button>
+            <button className="btn" disabled={selectedDeals.length < 2} onClick={() => setReport(true)}>
+              Compare {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selecting && (
+        <div className="compare-tray">
+          <div className="small" style={{ marginBottom: 8 }}>
+            {selectedDeals.length === 0 ? (
+              <span className="muted">Nothing selected yet.</span>
+            ) : (
+              selectedDeals.map((d) => (
+                <span key={d.item.id} className="badge lvl-first" style={{ marginRight: 6, marginBottom: 4, display: 'inline-block' }}>
+                  {d.item.name}
+                </span>
+              ))
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn ghost" onClick={exitSelect}>Cancel</button>
             <button
               className="btn danger"
               disabled={selectedDeals.length === 0}
               onClick={() => setConfirmIgnore(true)}
             >
-              🚫 Don't import
-            </button>
-            <button className="btn" disabled={selectedDeals.length < 2} onClick={() => setReport(true)}>
-              Compare {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
+              🚫 Don't import {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
             </button>
           </div>
         </div>
