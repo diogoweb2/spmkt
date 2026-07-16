@@ -25,7 +25,10 @@ import { classifyMeat } from './classify-meat.mjs'
 const here = dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
 const FORCE = process.argv.includes('--force')
-const WEEK_MS = 7 * 24 * 3600 * 1000
+// One flyer cycle, minus a day of slack: last week's run may have finished
+// later in the day than this week's (machine asleep at 9:30, manual re-run),
+// and a strict 7-day window would then skip the whole scheduled run.
+const WEEK_MS = 6 * 24 * 3600 * 1000
 const UNITS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un'] }
 
 // ---------- download ----------
