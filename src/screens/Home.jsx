@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
 import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GROCERY_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import { ignoreItems } from '../lib/ignore'
+import { canMerge, mergeItems, suggestName, targetUnit } from '../lib/merge'
+import { itemRecords } from '../lib/analysis'
 import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
 import useSessionState from '../lib/useSessionState'
@@ -28,7 +30,8 @@ function untilUrgency(ts) {
 // (rows then show "ended <date>"). 🔍 in the topbar opens a name search.
 // Rows with >1 record in history show a 📊 count.
 // Two multi-select modes: ⚖️ Compare button (same-kind only) vs hold-to-
-// select any row (🚫 Don't import — delete & ignore, no kind restriction).
+// select any row (🚫 Don't import — delete & ignore, no kind restriction;
+// 🔗 Merge when the selected items share a kind — same flow as the Items tab).
 // Store picking lives in the Location tab.
 const RATING_KEYS = Object.keys(RATING)
 
@@ -61,6 +64,7 @@ export default function Home({ db, update, push }) {
   const [selected, setSelected] = useState([]) // item ids
   const [report, setReport] = useState(false)
   const [confirmIgnore, setConfirmIgnore] = useState(false)
+  const [mergeName, setMergeName] = useState(null) // merge dialog open when a string
   const press = useRef({ timer: null, long: false })
   // Transient state of the "＋ send to RV Groceries" button ('pending'/'err').
   // A successful send is persisted in db.rvSent keyed by (item, record), so
@@ -170,6 +174,13 @@ export default function Home({ db, update, push }) {
     }
   }
   const compareKind = selectedDeals[0]?.item.kind ?? null
+  // Merge inputs (same as the Items tab): the selected items, their records,
+  // and per-item record counts to pick the suggested final name.
+  const selectedItems = selectedDeals.map((d) => d.item)
+  // Selection order (first-selected survives a merge), limited to visible deals.
+  const selectedIds = selected.filter((id) => selectedItems.some((i) => i.id === id))
+  const mergeRecs = db.records.filter((r) => selectedIds.includes(r.itemId))
+  const recordCounts = Object.fromEntries(selectedItems.map((i) => [i.id, itemRecords(db, i.id).length]))
   // CompareReport rows: variant null = compare across all the item's records
   const compareRows = selectedDeals.map((d) => ({ item: d.item, variant: null, label: '', key: d.item.id }))
 
@@ -204,6 +215,15 @@ export default function Home({ db, update, push }) {
     setSelecting(false)
     setSelected([])
     setConfirmIgnore(false)
+    setMergeName(null)
+  }
+
+  function doMerge() {
+    const name = mergeName.trim()
+    if (!name) return
+    const ids = selectedIds
+    update((d) => mergeItems(d, ids, name))
+    exitSelect()
   }
 
   // "Don't import anymore": same delete-&-ignore as the Items tab — removes
@@ -276,7 +296,7 @@ export default function Home({ db, update, push }) {
 
       {selecting && (
         <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
-          Tap more deals to select them, then 🚫 Don't import.
+          Tap more deals to select them. Merge duplicates, or 🚫 Don't import what you don't care about.
         </p>
       )}
 
@@ -523,6 +543,11 @@ export default function Home({ db, update, push }) {
               ))
             )}
           </div>
+          {selectedItems.length >= 2 && !canMerge(selectedItems) && (
+            <p className="muted small" style={{ marginTop: -4, marginBottom: 8 }}>
+              Can't merge: these aren't the same type (weight with weight).
+            </p>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn ghost" onClick={exitSelect}>Cancel</button>
             <button
@@ -531,6 +556,13 @@ export default function Home({ db, update, push }) {
               onClick={() => setConfirmIgnore(true)}
             >
               🚫 Don't import {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
+            </button>
+            <button
+              className="btn"
+              disabled={!canMerge(selectedItems)}
+              onClick={() => setMergeName(suggestName(selectedItems, recordCounts))}
+            >
+              🔗 Merge {selectedItems.length >= 2 ? `(${selectedItems.length})` : ''}
             </button>
           </div>
         </div>
@@ -551,6 +583,41 @@ export default function Home({ db, update, push }) {
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn ghost" onClick={() => setConfirmIgnore(false)}>Cancel</button>
               <button className="btn danger" onClick={doIgnore}>Don't import</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mergeName != null && (
+        <div className="modal-backdrop" onClick={() => setMergeName(null)}>
+          <div className="card" style={{ width: 'min(92vw, 400px)' }} onClick={(e) => e.stopPropagation()}>
+            <h2>Merge into one product 🔗</h2>
+            <p className="muted small" style={{ marginTop: -6 }}>
+              {selectedItems.map((i) => i.name).join(' + ')}
+            </p>
+            <label className="field">
+              <span className="lbl">Final name</span>
+              <input
+                type="text"
+                value={mergeName}
+                autoFocus
+                onChange={(e) => setMergeName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && doMerge()}
+              />
+            </label>
+            <ul className="muted small" style={{ paddingLeft: 18, margin: '4px 0 12px' }}>
+              <li>{mergeRecs.length} price{mergeRecs.length === 1 ? '' : 's'} kept, with their history.</li>
+              {(() => {
+                const t = targetUnit(selectedItems, mergeRecs)
+                return t && <li>Prices converted to a single unit: <b>{t}</b>.</li>
+              })()}
+              {selectedItems.some((i) => i.category === 'meat') && !selectedItems.every((i) => i.category === 'meat') && (
+                <li>Kept as <b>meat</b> (fresh/frozen, bones and skin stay per price).</li>
+              )}
+            </ul>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn ghost" onClick={() => setMergeName(null)}>Cancel</button>
+              <button className="btn" disabled={!mergeName.trim()} onClick={doMerge}>Merge</button>
             </div>
           </div>
         </div>
