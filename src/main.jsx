@@ -2,7 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { initTheme } from './lib/theme'
 import { registerSW } from 'virtual:pwa-register'
+
+initTheme()
 
 // Re-check for a new deploy every 5 min and whenever the app regains focus,
 // so an installed PWA picks up updates without a full relaunch.

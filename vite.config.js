@@ -17,10 +17,10 @@ export default defineConfig({
         name: 'Smart Price',
         short_name: 'SmartPrice',
         description: 'Know if it is a good deal, right at the shelf.',
-        theme_color: '#16a34a',
-        background_color: '#f6f7f9',
+        theme_color: '#1b6d3a',
+        background_color: '#f7f9f3',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         icons: [
           { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
         ],

@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { uid } from '../lib/db'
-import { suggestedUnit, suggestedQty, itemRecords } from '../lib/analysis'
-import { KIND_UNITS, unitKind } from '../lib/units'
+import { suggestedUnit, suggestedQty, itemRecords, recordNorm, pricesByStore } from '../lib/analysis'
+import { KIND_UNITS, unitKind, fmtDisplay } from '../lib/units'
 import { guessMeatType } from '../lib/meat'
 import { cashbackRate } from '../lib/cashback'
+import { addPhoto } from '../lib/photos'
+import { toast } from '../lib/toast'
 
 const CATEGORIES = [
   { id: 'meat', label: '🥩 Meat' },
@@ -12,54 +14,97 @@ const CATEGORIES = [
 
 const ALL_UNITS = ['kg', 'lb', 'g', 'oz', 'L', 'ml', 'un']
 
+// Store-mode add flow (BUSINESS_RULES §9): search-first; every match shows
+// what YOU already logged at THIS store (price + date, pinned first) plus the
+// cheapest other store, so "did I already add grapes at Costco?" answers
+// itself. Picking a product with a price here prefills the full form from
+// that record; saving a different price asks "new price vs correction", the
+// same price is a friendly no-op. A 📷 button snaps the label for the Review
+// queue instead of typing anything (photo mode, §15).
 export default function AddPrice({ db, update, push, pop, view }) {
   const store = db.stores.find((s) => s.id === view.storeId)
 
-  // Opened from the Items tab with a product (or a search term) already chosen
   const presetItem = db.items.find((i) => i.id === view.presetItemId) ?? null
   // Edit mode: opened from a product's History to fix an existing record.
   const editRec = db.records.find((r) => r.id === view.editRecordId) ?? null
-  const presetLast = editRec ?? (presetItem ? itemRecords(db, presetItem.id)[0] : null)
+  // Photo mode: opened from Review's ✏️ Edit with extracted fields.
+  const photoEntry = (db.photoQueue ?? []).find((p) => p.id === view.photoId) ?? null
+  const photoItem = photoEntry?.itemName
+    ? db.items.find((i) => i.name.toLowerCase() === photoEntry.itemName.toLowerCase()) ?? null
+    : null
 
-  const [query, setQuery] = useState(presetItem?.name ?? view.presetQuery ?? '')
-  const [item, setItem] = useState(presetItem) // existing item selected
-  const [creating, setCreating] = useState(!presetItem && !!view.presetQuery)
+  // At this store, the item's latest record (any variant) — the "you logged
+  // this here before" anchor for store mode.
+  const lastAtStore = (itemId) =>
+    itemRecords(db, itemId).find((r) => r.storeId === store?.id) ?? null
 
-  // form state
-  const [price, setPrice] = useState(editRec ? String(editRec.price) : '')
+  const startItem = presetItem ?? photoItem
+  // The item's last record at THIS store (prefills the whole form in store
+  // mode); falls back to its latest record anywhere for the meat toggles.
+  const startHere = startItem && !editRec ? lastAtStore(startItem.id) : null
+  const startRec = editRec ?? startHere ?? (startItem ? itemRecords(db, startItem.id)[0] : null)
+
+  const [query, setQuery] = useState(startItem?.name ?? photoEntry?.itemName ?? view.presetQuery ?? '')
+  const [item, setItem] = useState(startItem)
+  const [creating, setCreating] = useState(!startItem && !!(view.presetQuery || photoEntry?.itemName))
+
+  // form state — photo extraction wins, then the record being edited/updated
+  const [price, setPrice] = useState(
+    photoEntry?.price != null ? String(photoEntry.price) : editRec ? String(editRec.price) : startHere ? String(startHere.price) : '',
+  )
   const [qty, setQty] = useState(() =>
-    editRec ? String(editRec.qty) : presetItem ? String(suggestedQty(db, presetItem, view.storeId)) : '1',
+    photoEntry?.qty != null ? String(photoEntry.qty)
+    : editRec ? String(editRec.qty)
+    : startItem ? String(startHere ? startHere.qty : suggestedQty(db, startItem, view.storeId))
+    : '1',
   )
   const [unit, setUnit] = useState(() =>
-    editRec ? editRec.unit : presetItem ? suggestedUnit(db, presetItem, view.storeId) : store?.defaultUnit ?? 'lb',
+    photoEntry?.unit ?? (editRec ? editRec.unit
+    : startItem ? (startHere ? startHere.unit : suggestedUnit(db, startItem, view.storeId))
+    : store?.defaultUnit ?? 'lb'),
   )
-  const [category, setCategory] = useState(presetItem?.category ?? 'other')
-  const [processing, setProcessing] = useState(presetItem?.processing ?? 'natural')
-  // Meat package entry: total package price + weight (− optional "$x off"
-  // sticker at Costco), for packs with no per-kg/per-lb label price.
-  const [pkgMode, setPkgMode] = useState(!!editRec && presetItem?.category === 'meat' && editRec.qty !== 1)
+  const [category, setCategory] = useState(photoEntry?.category ?? startItem?.category ?? 'other')
+  const [processing, setProcessing] = useState(startItem?.processing ?? 'natural')
+  const [pkgMode, setPkgMode] = useState(!!editRec && startItem?.category === 'meat' && editRec.qty !== 1)
   const [discount, setDiscount] = useState('')
-  const [frozen, setFrozen] = useState(presetLast?.frozen ?? false)
-  const [bones, setBones] = useState(presetLast?.bones ?? false)
-  const [skin, setSkin] = useState(presetLast?.skin ?? false)
+  const [frozen, setFrozen] = useState(photoEntry?.frozen ?? startRec?.frozen ?? false)
+  const [bones, setBones] = useState(photoEntry?.bones ?? startRec?.bones ?? false)
+  const [skin, setSkin] = useState(photoEntry?.skin ?? startRec?.skin ?? false)
+  // "You paid a different price here before" dialog: null | {prevRec}
+  const [priceChoice, setPriceChoice] = useState(null)
+  const cameraRef = useRef(null)
+  const [snapState, setSnapState] = useState(null) // 'busy' while uploading
 
   const matches = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const qn = query.trim().toLowerCase()
     const scored = db.items
-      .filter((i) => !q || i.name.toLowerCase().includes(q))
-      .map((i) => ({ i, n: itemRecords(db, i.id).length }))
-      .sort((a, b) => b.n - a.n)
-    return scored.slice(0, q ? 6 : 8).map((s) => s.i)
-  }, [db, query])
+      .filter((i) => !qn || i.name.toLowerCase().includes(qn))
+      .map((i) => {
+        const here = lastAtStore(i.id)
+        return { i, here, n: itemRecords(db, i.id).length }
+      })
+      // Items you already logged at this store first (most recent first),
+      // then the rest by history size.
+      .sort((a, b) => {
+        if (!!b.here - !!a.here) return !!b.here - !!a.here
+        if (a.here && b.here) return b.here.ts - a.here.ts
+        return b.n - a.n
+      })
+    return scored.slice(0, qn ? 6 : 8)
+  }, [db, query]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectItem(it) {
     setItem(it)
     setCreating(false)
     setQuery(it.name)
-    setUnit(suggestedUnit(db, it, store.id))
-    setQty(String(suggestedQty(db, it, store.id)))
     setCategory(it.category)
-    const last = itemRecords(db, it.id)[0]
+    const here = lastAtStore(it.id)
+    const last = here ?? itemRecords(db, it.id)[0]
+    // Store mode: prefill everything from this store's last record —
+    // usually only the price needs a glance.
+    setUnit(here ? here.unit : suggestedUnit(db, it, store.id))
+    setQty(String(here ? here.qty : suggestedQty(db, it, store.id)))
+    setPrice(here ? String(here.price) : '')
     setFrozen(last?.frozen ?? false)
     setBones(last?.bones ?? false)
     setSkin(last?.skin ?? false)
@@ -70,27 +115,69 @@ export default function AddPrice({ db, update, push, pop, view }) {
     setCreating(true)
     setUnit(store?.defaultUnit ?? 'lb')
     setQty('1')
+    setPrice('')
   }
 
   const formVisible = item || creating
   const isMeat = category === 'meat'
   const isCostco = /costco/i.test(store?.name ?? '')
-  // Package mode is meat-only; the toggle state is ignored elsewhere.
   const pkg = pkgMode && isMeat
-  // Meat label mode: price straight off the label ($/kg or $/lb), qty is 1.
   const labelMode = isMeat && !pkg
   const priceNum = parseFloat(price)
   const discountNum = pkg ? parseFloat(discount) || 0 : 0
   const effPrice = priceNum - discountNum
   const qtyNum = labelMode && unit !== 'un' ? 1 : parseFloat(qty)
   const valid = formVisible && effPrice > 0 && qtyNum > 0 && (item || query.trim())
-  // Shelf price is what gets saved; cashback is applied at display/compare
-  // time everywhere else, so preview the effective price here too.
   const cbRate = cashbackRate(db, store)
+  const finalPrice = pkg ? Math.round(effPrice * 100) / 100 : priceNum
+
+  const prevHere = item && !editRec ? lastAtStore(item.id) : null
+  const prevHereNorm = prevHere && item ? recordNorm(prevHere, item, db) : null
+  const cheapestElsewhere = item
+    ? pricesByStore(db, item.id, null).find((e) => e.store.id !== store?.id)
+    : null
+
+  // Append a brand-new record (the normal path, and "it's a new price").
+  function appendRecord(itemId, meat) {
+    update((d) => {
+      d.records.push({
+        id: uid('r'),
+        itemId,
+        storeId: store.id,
+        price: finalPrice,
+        qty: qtyNum,
+        unit,
+        frozen: meat ? frozen : null,
+        bones: meat ? bones : null,
+        skin: meat ? skin : null,
+        ts: photoEntry?.ts ?? Date.now(),
+      })
+      if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
+    })
+    push({ name: 'item', itemId, fromSave: !byPiece })
+  }
+
+  // "I typed it wrong before": overwrite the previous record at this store.
+  function correctRecord(meat) {
+    update((d) => {
+      const rec = d.records.find((r) => r.id === prevHere.id)
+      if (!rec) return
+      rec.price = finalPrice
+      rec.qty = qtyNum
+      rec.unit = unit
+      rec.frozen = meat ? frozen : null
+      rec.bones = meat ? bones : null
+      rec.skin = meat ? skin : null
+      if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
+    })
+    toast('Price corrected — history unchanged')
+    push({ name: 'item', itemId: item.id })
+  }
 
   function save() {
     if (!valid) return
     let itemId = item?.id
+
     if (editRec) {
       update((d) => {
         const rec = d.records.find((r) => r.id === editRec.id)
@@ -98,7 +185,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
         const meat = category === 'meat'
         it.category = category
         it.processing = meat ? processing : null
-        rec.price = pkg ? Math.round(effPrice * 100) / 100 : priceNum
+        rec.price = finalPrice
         rec.qty = qtyNum
         rec.unit = unit
         rec.frozen = meat ? frozen : null
@@ -108,9 +195,26 @@ export default function AddPrice({ db, update, push, pop, view }) {
       pop()
       return
     }
-    update((d) => {
-      if (!itemId) {
-        itemId = uid('i')
+
+    const meat = (item ? item.category : category) === 'meat'
+
+    // Store mode: the item already has a price at this store.
+    if (prevHere && item) {
+      const same =
+        prevHere.price === finalPrice && prevHere.qty === qtyNum && prevHere.unit === unit
+      if (same) {
+        toast('Same price as last time — nothing new to save 👍')
+        push({ name: 'item', itemId: item.id })
+        return
+      }
+      // Different price: new record, or fixing a typo?
+      setPriceChoice({ meat })
+      return
+    }
+
+    if (!itemId) {
+      itemId = uid('i')
+      update((d) => {
         d.items.push({
           id: itemId,
           name: query.trim(),
@@ -118,36 +222,35 @@ export default function AddPrice({ db, update, push, pop, view }) {
           kind: unitKind(unit),
           defaultUnit: unit,
           annualQty: null,
-          // Meat classification: the user picks natural/ultra, the name gives
-          // an instant meatType guess; the weekly LLM pass fills the
-          // authoritative meatType and market thresholds (BUSINESS_RULES §13).
           meatType: category === 'meat' ? guessMeatType(query) : null,
           processing: category === 'meat' ? processing : null,
           market: null,
         })
-      }
-      const meat = (item ? item.category : category) === 'meat'
-      d.records.push({
-        id: uid('r'),
-        itemId,
-        storeId: store.id,
-        price: pkg ? Math.round(effPrice * 100) / 100 : priceNum,
-        qty: qtyNum,
-        unit,
-        frozen: meat ? frozen : null,
-        bones: meat ? bones : null,
-        skin: meat ? skin : null,
-        ts: Date.now(),
       })
-    })
-    push({ name: 'item', itemId, fromSave: !byPiece })
+    }
+    appendRecord(itemId, meat)
+  }
+
+  // 📷 photo mode: snap the label, deal with it later in Review.
+  async function snap(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setSnapState('busy')
+    try {
+      await addPhoto(update, file, store.id)
+      toast('Photo queued 📷 — extracted overnight, then it shows up in Review')
+      navigator.vibrate?.(15)
+    } catch (err) {
+      console.error('photo upload failed', err)
+      toast(`⚠️ Photo upload failed: ${err.message}`)
+    } finally {
+      setSnapState(null)
+    }
   }
 
   if (!store) return null
 
-  // Units compatible with an existing item's kind; new items can pick anything.
-  // Meat is sold by the piece too ("3 pieces $8", no weight printed) — allow
-  // `un` on weight meat items; such records are history-only (never compared).
   const meatItem = (item ?? { category }).category === 'meat'
   const unitChoices = meatItem
     ? pkg ? KIND_UNITS.weight : ['kg', 'lb', 'un']
@@ -155,14 +258,37 @@ export default function AddPrice({ db, update, push, pop, view }) {
   if (!unitChoices.includes(unit)) setUnit(unitChoices.includes(store?.defaultUnit) ? store.defaultUnit : unitChoices[0])
   const byPiece = item && unitKind(unit) !== item.kind
 
+  const wu = db.displayWeightUnit ?? 'lb'
+
   return (
-    <div className="screen">
+    <div className="screen" style={{ maxWidth: 640, margin: '0 auto' }}>
       <div className="topbar">
         <button className="back" onClick={pop}>‹</button>
-        <div>
+        <div className="grow" style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ color: store.color }}>{store.name}</h1>
           {editRec && <span className="muted small">editing price from {new Date(editRec.ts).toLocaleDateString()}</span>}
+          {photoEntry && <span className="muted small">from your photo 📷</span>}
         </div>
+        {!editRec && (
+          <>
+            <button
+              className="btn small tonal"
+              disabled={snapState === 'busy'}
+              title="Photo mode: snap the shelf label now, review the details later"
+              onClick={() => cameraRef.current?.click()}
+            >
+              {snapState === 'busy' ? 'Uploading…' : '📷 Snap label'}
+            </button>
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              hidden
+              onChange={snap}
+            />
+          </>
+        )}
       </div>
 
       <label className="field">
@@ -182,15 +308,28 @@ export default function AddPrice({ db, update, push, pop, view }) {
 
       {!formVisible && (
         <div className="suggestions list">
-          {matches.map((it) => (
-            <button key={it.id} className="row" onClick={() => selectItem(it)}>
-              <div className="grow">
-                <div className="title">{it.name}</div>
-                <div className="sub">{it.category === 'meat' ? '🥩 Meat' : '📦 ' + (it.category !== 'other' ? it.category : 'Other')}</div>
-              </div>
-              <span className="chev">›</span>
-            </button>
-          ))}
+          {matches.map(({ i: it, here }) => {
+            const hereNorm = here ? recordNorm(here, it, db) : null
+            return (
+              <button key={it.id} className="row" onClick={() => selectItem(it)}>
+                <div className="grow">
+                  <div className="title">{it.name}</div>
+                  <div className="sub">
+                    {here ? (
+                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                        📍 here: {hereNorm != null ? fmtDisplay(hereNorm, it.kind, wu) : `$${here.price}`} · {new Date(here.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </span>
+                    ) : (
+                      <span>{it.category === 'meat' ? '🥩 Meat' : '📦 ' + (it.category !== 'other' ? it.category : 'Other')} · never logged at {store.name}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="right">
+                  {here ? <span className="badge lvl-first">update</span> : <span className="chev">›</span>}
+                </div>
+              </button>
+            )
+          })}
           {query.trim() && !db.items.some((i) => i.name.toLowerCase() === query.trim().toLowerCase()) && (
             <button className="row" onClick={startCreate}>
               <div className="grow">
@@ -209,17 +348,29 @@ export default function AddPrice({ db, update, push, pop, view }) {
 
       {formVisible && (
         <>
+          {prevHere && (
+            <div className="card" style={{ padding: 12, background: 'var(--accent-soft)', borderColor: 'transparent' }}>
+              <div className="small" style={{ fontWeight: 700 }}>
+                📍 You logged this at {store.name}: {prevHereNorm != null ? fmtDisplay(prevHereNorm, item.kind, wu) : `$${prevHere.price}`}
+                <span className="muted"> · {new Date(prevHere.ts).toLocaleDateString()}</span>
+              </div>
+              {cheapestElsewhere && (
+                <div className="small muted" style={{ marginTop: 3 }}>
+                  cheapest elsewhere: {fmtDisplay(cheapestElsewhere.norm, item.kind, wu)} at {cheapestElsewhere.store.name}
+                </div>
+              )}
+              <div className="small muted" style={{ marginTop: 3 }}>
+                Same price? Nothing to do. New price? Just change it below and save.
+              </div>
+            </div>
+          )}
+
           {(creating || editRec) && (
             <label className="field">
               <span className="lbl">Category</span>
               <div className="seg">
                 {CATEGORIES.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className={category === c.id ? 'on' : ''}
-                    onClick={() => setCategory(c.id)}
-                  >
+                  <button key={c.id} type="button" className={category === c.id ? 'on' : ''} onClick={() => setCategory(c.id)}>
                     {c.label}
                   </button>
                 ))}
@@ -231,18 +382,10 @@ export default function AddPrice({ db, update, push, pop, view }) {
             <label className="field">
               <span className="lbl">Processing</span>
               <div className="seg">
-                <button
-                  type="button"
-                  className={processing === 'natural' ? 'on' : ''}
-                  onClick={() => { setProcessing('natural'); setFrozen(false) }}
-                >
+                <button type="button" className={processing === 'natural' ? 'on' : ''} onClick={() => { setProcessing('natural'); setFrozen(false) }}>
                   🥩 Natural
                 </button>
-                <button
-                  type="button"
-                  className={processing === 'ultra' ? 'on' : ''}
-                  onClick={() => { setProcessing('ultra'); setFrozen(true) }}
-                >
+                <button type="button" className={processing === 'ultra' ? 'on' : ''} onClick={() => { setProcessing('ultra'); setFrozen(true) }}>
                   🌭 Ultra-processed
                 </button>
               </div>
@@ -339,7 +482,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
 
           {byPiece && (
             <p className="muted small" style={{ marginTop: -6, marginBottom: 10 }}>
-              ⚠️ No weight given — saved for history, but it can't be compared with $/{db.displayWeightUnit ?? 'lb'} prices.
+              ⚠️ No weight given — saved for history, but it can't be compared with $/{wu} prices.
             </p>
           )}
 
@@ -348,35 +491,23 @@ export default function AddPrice({ db, update, push, pop, view }) {
               <label className="field">
                 <span className="lbl">Fresh or frozen?</span>
                 <div className="seg">
-                  <button type="button" className={!frozen ? 'on' : ''} onClick={() => setFrozen(false)}>
-                    🥩 Fresh
-                  </button>
-                  <button type="button" className={frozen ? 'on' : ''} onClick={() => setFrozen(true)}>
-                    ❄️ Frozen
-                  </button>
+                  <button type="button" className={!frozen ? 'on' : ''} onClick={() => setFrozen(false)}>🥩 Fresh</button>
+                  <button type="button" className={frozen ? 'on' : ''} onClick={() => setFrozen(true)}>❄️ Frozen</button>
                 </div>
               </label>
               <div style={{ display: 'flex', gap: 10 }}>
                 <label className="field" style={{ flex: 1 }}>
                   <span className="lbl">Bones?</span>
                   <div className="seg">
-                    <button type="button" className={!bones ? 'on' : ''} onClick={() => setBones(false)}>
-                      No
-                    </button>
-                    <button type="button" className={bones ? 'on' : ''} onClick={() => setBones(true)}>
-                      🦴 Yes
-                    </button>
+                    <button type="button" className={!bones ? 'on' : ''} onClick={() => setBones(false)}>No</button>
+                    <button type="button" className={bones ? 'on' : ''} onClick={() => setBones(true)}>🦴 Yes</button>
                   </div>
                 </label>
                 <label className="field" style={{ flex: 1 }}>
                   <span className="lbl">Skin?</span>
                   <div className="seg">
-                    <button type="button" className={!skin ? 'on' : ''} onClick={() => setSkin(false)}>
-                      No
-                    </button>
-                    <button type="button" className={skin ? 'on' : ''} onClick={() => setSkin(true)}>
-                      Yes
-                    </button>
+                    <button type="button" className={!skin ? 'on' : ''} onClick={() => setSkin(false)}>No</button>
+                    <button type="button" className={skin ? 'on' : ''} onClick={() => setSkin(true)}>Yes</button>
                   </div>
                 </label>
               </div>
@@ -384,9 +515,38 @@ export default function AddPrice({ db, update, push, pop, view }) {
           )}
 
           <button className="btn" disabled={!valid} onClick={save} style={{ marginTop: 8 }}>
-            {editRec ? 'Save changes' : 'Save price'}
+            {editRec ? 'Save changes' : prevHere ? 'Save price at ' + store.name : 'Save price'}
           </button>
         </>
+      )}
+
+      {/* new price vs correction (BUSINESS_RULES §1: prices are append-only,
+          corrections are the explicit exception) */}
+      {priceChoice && (
+        <div className="modal-backdrop sheet" onClick={() => setPriceChoice(null)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-handle" />
+            <h2>Different price than before</h2>
+            <p className="muted small" style={{ marginBottom: 14 }}>
+              You logged ${prevHere.price} here on {new Date(prevHere.ts).toLocaleDateString()} — now ${finalPrice}. Which is it?
+            </p>
+            <button
+              className="btn"
+              style={{ marginBottom: 8 }}
+              onClick={() => { setPriceChoice(null); appendRecord(item.id, priceChoice.meat) }}
+            >
+              📈 New price — add to history
+            </button>
+            <button
+              className="btn tonal"
+              style={{ marginBottom: 8 }}
+              onClick={() => { setPriceChoice(null); correctRecord(priceChoice.meat) }}
+            >
+              ✏️ I typed it wrong before — fix it
+            </button>
+            <button className="btn ghost" onClick={() => setPriceChoice(null)}>Cancel</button>
+          </div>
+        </div>
       )}
     </div>
   )

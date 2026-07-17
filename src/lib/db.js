@@ -21,6 +21,7 @@ export const DEFAULT_DB = {
   ignored: [], // {id, name, ts} — products the user deleted & ignored; flyer import skips their kind
   pushTokens: [], // {token, ua, ts} — FCM web-push tokens; the flyer job notifies these devices
   rvSent: [], // {itemId, recId, ts} — deals sent to the RV Groceries app; keeps the ✓ on the deal row while that record is still the current deal (one-way: nothing in the RV app ever syncs back)
+  photoQueue: [], // 📷 photo mode: {id, path, storeId, status: 'pending'|'ready'|'failed', ts, ...extracted fields} — see src/lib/photos.js and scripts/photos/process.mjs
 }
 
 function userDoc(userId) {

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.spmkt.photos</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/diogolopes/.local/share/fnm/node-versions/v24.12.0/installation/bin/node</string>
+    <string>/Users/diogolopes/dev/Spmkt/scripts/photos/process.mjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/diogolopes/dev/Spmkt</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>20</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/diogolopes/Library/Logs/spmkt-photos.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/diogolopes/Library/Logs/spmkt-photos.log</string>
+</dict>
+</plist>

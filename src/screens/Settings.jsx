@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { exportJSON, DEFAULT_DB } from '../lib/db'
+import { exportJSON, DEFAULT_DB, uid } from '../lib/db'
+import { currentTheme, applyTheme } from '../lib/theme'
 import { UNITS } from '../lib/units'
 import { unignore } from '../lib/ignore'
 import { addWhitelistRule, removeWhitelistRule, whitelistRules } from '../lib/whitelist'
@@ -34,6 +35,8 @@ export default function Settings({ db, update, onSignOut }) {
   const [pushOk, setPushOk] = useState(null) // null = unknown, true/false = supported
   const [wlText, setWlText] = useState('')
   const [tab, setTab] = useState('stores')
+  const [theme, setTheme] = useState(currentTheme())
+  const [newStore, setNewStore] = useState(null) // string while the add-store field is open
   const [pushMsg, setPushMsg] = useState('')
   const [pushing, setPushing] = useState(false)
 
@@ -92,6 +95,25 @@ export default function Settings({ db, update, onSignOut }) {
 
       {tab === 'stores' && (
       <div className="card">
+        <h2>Appearance</h2>
+        <div className="seg" style={{ marginBottom: 4 }}>
+          {[['light', '☀️ Light'], ['dark', '🌙 Dark']].map(([t, label]) => (
+            <button
+              key={t}
+              type="button"
+              className={theme === t ? 'on' : ''}
+              onClick={() => { setTheme(t); applyTheme(t) }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="muted small" style={{ marginTop: 8 }}>Per device — other phones keep their own setting.</p>
+      </div>
+      )}
+
+      {tab === 'stores' && (
+      <div className="card">
         <h2>Stores</h2>
         <div className="list">
           {db.stores.map((s) => (
@@ -135,6 +157,42 @@ export default function Settings({ db, update, onSignOut }) {
             </div>
           ))}
         </div>
+        {newStore == null ? (
+          <button className="btn small ghost" style={{ marginTop: 10 }} onClick={() => setNewStore('')}>
+            + Add store
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <input
+              type="text"
+              autoFocus
+              placeholder="e.g. Food Basics"
+              value={newStore}
+              onChange={(e) => setNewStore(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newStore.trim()) {
+                  update((d) => {
+                    d.stores.push({ id: uid('s'), name: newStore.trim(), color: '#0d9488', defaultUnit: 'lb' })
+                  })
+                  setNewStore(null)
+                }
+              }}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button
+              className="btn small"
+              disabled={!newStore.trim()}
+              onClick={() => {
+                update((d) => {
+                  d.stores.push({ id: uid('s'), name: newStore.trim(), color: '#0d9488', defaultUnit: 'lb' })
+                })
+                setNewStore(null)
+              }}
+            >
+              Add
+            </button>
+          </div>
+        )}
       </div>
       )}
 

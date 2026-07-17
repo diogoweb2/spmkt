@@ -1,18 +1,28 @@
 import { useMemo, useRef, useState } from 'react'
-import { fmtDisplay } from '../lib/units'
+import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
 import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GROCERY_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import { ignoreItems } from '../lib/ignore'
 import { canMerge, mergeItems, suggestName, targetUnit } from '../lib/merge'
-import { itemRecords } from '../lib/analysis'
+import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo, isComparable } from '../lib/analysis'
+import { effectivePrice } from '../lib/cashback'
 import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
+import { toast } from '../lib/toast'
 import useSessionState from '../lib/useSessionState'
 import PhotoLink from '../components/PhotoLink'
 import CompareReport from '../components/CompareReport'
+import FlyerLink from '../components/FlyerLink'
 import Chips from '../components/Chips'
+import StoreSheet from '../components/StoreSheet'
 
-// Color a flyer's "until <date>" by how close it is to expiring.
+// Home is the single browse surface: a 🏷️ Deals / 📋 All items view switch
+// (the old Items tab folded in), a 📍 store chip (the old Location tab folded
+// into a bottom sheet), and ONE selection mode — long-press a row or use its
+// ⋮ menu, then act from the contextual action bar (⚖️ Compare · 🔗 Merge ·
+// 🚫 Don't import). See BUSINESS_RULES §9–10.
+const RATING_KEYS = Object.keys(RATING)
 const UNTIL_COLOR = { red: 'var(--red)', amber: 'var(--amber)', green: 'var(--accent)' }
+
 function untilUrgency(ts) {
   const daysLeft = (ts - Date.now()) / 86400000
   if (daysLeft <= 1) return 'red'
@@ -20,56 +30,53 @@ function untilUrgency(ts) {
   return 'green'
 }
 
-// Home = current deals. 🥩 Meat mode groups Beef/Pork/Chicken/Fish; ultra-
-// processed items get their own "<Type> · ultra-processed" section after the
-// natural one, with rating/type/processing filters (rating default:
-// excellent + good). 🛒 Groceries mode groups non-meat deals by category
-// (supermarket section) with the same rating filter plus category + store
-// filters; both modes share the $/🔥/A–Z sort.
-// Expired flyer prices never show unless the ⏰ Expired toggle is on
-// (rows then show "ended <date>"). 🔍 in the topbar opens a name search.
-// Rows with >1 record in history show a 📊 count.
-// Two multi-select modes: ⚖️ Compare button (same-kind only) vs hold-to-
-// select any row (🚫 Don't import — delete & ignore, no kind restriction;
-// 🔗 Merge when the selected items share a kind — same flow as the Items tab).
-// Store picking lives in the Location tab.
-const RATING_KEYS = Object.keys(RATING)
+// "vs your last buy": compare a deal's price to the item's previous
+// comparable record (any store). null when there is no older price or the
+// difference is under 3% (noise).
+function lastBuyDelta(db, d) {
+  if (d.byPiece) return null
+  const item = d.item
+  const prev = itemRecords(db, item.id).find(
+    (r) => r.ts < d.rec.ts && r.id !== d.rec.id && isComparable(item, r) && recordNorm(r, item, db) != null,
+  )
+  if (!prev) return null
+  const prevNorm = recordNorm(prev, item, db)
+  const pct = Math.round(((d.norm - prevNorm) / prevNorm) * 100)
+  if (Math.abs(pct) < 3) return null
+  return pct
+}
 
 export default function Home({ db, update, push }) {
-  // ⏰ Expired toggle: include expired flyer records in the deal picking
-  // (rows get an "ended <date>" mark); off = the normal never-show rule.
+  const [view, setView] = useSessionState('home.view', 'deals') // 'deals' | 'items'
   const [showExpired, setShowExpired] = useSessionState('home.showExpired', false)
-  const groups = useMemo(() => meatDeals(db, { includeExpired: showExpired }), [db, showExpired])
-  const grocery = useMemo(() => groceryDeals(db, { includeExpired: showExpired }), [db, showExpired])
-  // '🥩 meat' (classified deals) vs '🛒 grocery' (everything else; category
-  // chips instead of meat-type chips, no processing filter).
-  // Mode + filters live in sessionStorage so they survive tab switches
-  // (Home unmounts when leaving the tab); reset when the browser tab closes.
   const [mode, setMode] = useSessionState('home.mode', 'meat')
   const meat = mode === 'meat'
   const [ratingsOn, setRatingsOn] = useSessionState('home.ratingsOn', () => new Set(['excellent', 'good']), { set: true })
   const [storesOff, setStoresOff] = useSessionState('home.storesOff', () => new Set(), { set: true })
   const [typesOff, setTypesOff] = useSessionState('home.typesOff', () => new Set(), { set: true })
-  const [catsOff, setCatsOff] = useSessionState('home.catsOff', () => new Set(), { set: true }) // grocery category filter
-  const [proc, setProc] = useSessionState('home.proc', 'all') // cycles all -> natural -> ultra
-  const [sort, setSort] = useSessionState('home.sort', 'price') // 'price' | 'deal' | 'name'
-  // 🔍 icon in the topbar toggles a name-search field; closing it clears q.
-  const [searchOpen, setSearchOpen] = useSessionState('home.searchOpen', false)
+  const [catsOff, setCatsOff] = useSessionState('home.catsOff', () => new Set(), { set: true })
+  const [proc, setProc] = useSessionState('home.proc', 'all')
+  const [sort, setSort] = useSessionState('home.sort', 'price')
   const [q, setQ] = useSessionState('home.q', '')
-  // Two separate multi-select modes (same split as the Items tab):
-  // - "comparing": explicit ⚖️ Compare button, same-kind only, tray runs the report.
-  // - "selecting": hold a row, any kind, tray only offers 🚫 Don't import (ignore).
-  const [comparing, setComparing] = useState(false)
+
+  // ONE selection mode. Keys: item id in Deals view, `${itemId}|${variant}`
+  // in All items view (a meat item's variants are separate compare rows).
   const [selecting, setSelecting] = useState(false)
-  const [selected, setSelected] = useState([]) // item ids
+  const [selected, setSelected] = useState([])
   const [report, setReport] = useState(false)
-  const [confirmIgnore, setConfirmIgnore] = useState(false)
-  const [mergeName, setMergeName] = useState(null) // merge dialog open when a string
+  const [confirmIgnore, setConfirmIgnore] = useState(null) // array of item ids
+  const [mergeName, setMergeName] = useState(null)
+  const [menuFor, setMenuFor] = useState(null) // row key with its ⋮ menu open
+  const [storeSheet, setStoreSheet] = useState(false)
+  const [pendingAdd, setPendingAdd] = useState(null) // add flow waiting for a store pick
   const press = useRef({ timer: null, long: false })
-  // Transient state of the "＋ send to RV Groceries" button ('pending'/'err').
-  // A successful send is persisted in db.rvSent keyed by (item, record), so
-  // the ✓ survives reloads and stays until a new record becomes the deal.
-  // One-way only: checking/removing the item in the RV app never syncs back.
+
+  const groups = useMemo(() => meatDeals(db, { includeExpired: showExpired }), [db, showExpired])
+  const grocery = useMemo(() => groceryDeals(db, { includeExpired: showExpired }), [db, showExpired])
+  const allDeals = meat ? MEAT_TYPES.flatMap((t) => groups[t] ?? []) : grocery
+  const currentStore = db.stores.find((s) => s.id === db.currentStoreId)
+
+  // ---------- RV Groceries send (unchanged behavior) ----------
   const [rvState, setRvState] = useState({})
   const rvSent = useMemo(
     () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
@@ -87,8 +94,6 @@ export default function Home({ db, update, push }) {
       })
       setRvState((s) => ({ ...s, [d.key]: undefined }))
       update((next) => {
-        // Prune markers whose record expired or is gone — their ✓ is moot
-        // (the deal left Home), so they'd only accumulate forever.
         const now = Date.now()
         next.rvSent = (next.rvSent ?? []).filter((s) => {
           const rec = next.records.find((r) => r.id === s.recId)
@@ -104,8 +109,7 @@ export default function Home({ db, update, push }) {
     }
   }
 
-  const allDeals = meat ? MEAT_TYPES.flatMap((t) => groups[t] ?? []) : grocery
-
+  // ---------- deals filtering ----------
   const dealStores = useMemo(() => {
     const map = new Map()
     for (const d of allDeals) map.set(d.store.id, d.store)
@@ -119,9 +123,6 @@ export default function Home({ db, update, push }) {
     setSet(next)
   }
 
-  // Items with no market data (rating null) always pass the rating filter,
-  // which applies in both modes. Grocery mode adds the category filter; only
-  // meat has the processing filter.
   const qNorm = q.trim().toLowerCase()
   const show = (d) =>
     !storesOff.has(d.store.id) &&
@@ -131,10 +132,8 @@ export default function Home({ db, update, push }) {
       ? proc === 'all' || (proc === 'ultra') === d.ultra
       : !catsOff.has(d.gtype))
 
-  // Category chips only for sections that currently have grocery deals.
   const groceryCats = meat ? [] : GROCERY_TYPES.filter((t) => grocery.some((d) => d.gtype === t))
 
-  // 'deal' = biggest discount vs the item's market avg price; no-market last.
   const dealScore = (d) => (d.item.market ? d.norm / d.item.market.avg : Infinity)
   const cmp = {
     price: (a, b) => a.norm - b.norm,
@@ -142,9 +141,6 @@ export default function Home({ db, update, push }) {
     name: (a, b) => a.item.name.localeCompare(b.item.name),
   }[sort]
 
-  // One section per meat type for natural items, followed by a separate
-  // "<Type> · ultra-processed" section when the type has ultra items.
-  // Grocery mode: one labeled section per category, in GROCERY_TYPES order.
   const sections = meat
     ? MEAT_TYPES.flatMap((t) => {
         if (typesOff.has(t)) return []
@@ -161,36 +157,96 @@ export default function Home({ db, update, push }) {
         return list.length ? [{ key: t, label: GROCERY_TYPE_LABEL[t], list }] : []
       })
 
-  // Selection is per item; an item can have two rows (normal + by-piece),
-  // so dedupe by item id — trays and CompareReport want one entry per item.
-  const selectedDeals = []
-  {
+  // ---------- All items rows (the old Items tab, folded in) ----------
+  const itemRows = useMemo(() => {
+    const query = qNorm
+    const out = []
+    for (const item of db.items) {
+      if (query && !item.name.toLowerCase().includes(query)) continue
+      const recs = itemRecords(db, item.id)
+      if (recs.length === 0) {
+        out.push({ item, variant: '', label: '', recs: [], key: item.id + '|' })
+        continue
+      }
+      const byVariant = new Map()
+      for (const r of recs) {
+        const key = variantKey(r)
+        if (!byVariant.has(key)) byVariant.set(key, [])
+        byVariant.get(key).push(r)
+      }
+      for (const [variant, vrecs] of byVariant) {
+        out.push({ item, variant, label: variantLabel(vrecs[0]), recs: vrecs, key: item.id + '|' + variant })
+      }
+    }
+    return out.sort((a, b) => (b.recs[0]?.ts ?? 0) - (a.recs[0]?.ts ?? 0))
+  }, [db, qNorm])
+
+  // ---------- selection helpers ----------
+  const deals = view === 'deals'
+
+  // Deals view selection is per item (an item's normal + by-piece rows toggle
+  // together); All items view is per item+variant row.
+  const selectedDeals = useMemo(() => {
+    if (!deals) return []
     const seen = new Set()
+    const out = []
     for (const d of allDeals) {
       if (selected.includes(d.item.id) && !seen.has(d.item.id)) {
         seen.add(d.item.id)
-        selectedDeals.push(d)
+        out.push(d)
       }
     }
-  }
-  const compareKind = selectedDeals[0]?.item.kind ?? null
-  // Merge inputs (same as the Items tab): the selected items, their records,
-  // and per-item record counts to pick the suggested final name.
-  const selectedItems = selectedDeals.map((d) => d.item)
-  // Selection order (first-selected survives a merge), limited to visible deals.
-  const selectedIds = selected.filter((id) => selectedItems.some((i) => i.id === id))
+    return out
+  }, [deals, selected, allDeals])
+
+  const selectedRows = deals ? [] : itemRows.filter((r) => selected.includes(r.key))
+
+  // The items behind the selection (merge / ignore act per item).
+  const selectedItems = deals
+    ? selectedDeals.map((d) => d.item)
+    : [...new Map(selectedRows.map((r) => [r.item.id, r.item])).values()]
+  const selectedIds = selectedItems.map((i) => i.id)
   const mergeRecs = db.records.filter((r) => selectedIds.includes(r.itemId))
   const recordCounts = Object.fromEntries(selectedItems.map((i) => [i.id, itemRecords(db, i.id).length]))
-  // CompareReport rows: variant null = compare across all the item's records
-  const compareRows = selectedDeals.map((d) => ({ item: d.item, variant: null, label: '', key: d.item.id }))
 
-  function holdStart(d) {
-    if (comparing || selecting) return
+  // Compare needs ≥2 comparable same-kind entries.
+  const compareRows = deals
+    ? selectedDeals.filter((d) => !d.byPiece).map((d) => ({ item: d.item, variant: null, label: '', key: d.item.id }))
+    : selectedRows.filter((r) => r.recs.length && pricesByStore(db, r.item.id, r.variant).length)
+  const compareOk =
+    compareRows.length >= 2 &&
+    compareRows.length === selected.length &&
+    compareRows.every((r) => r.item.kind === compareRows[0].item.kind)
+
+  function rowKey(x) {
+    return deals ? x.item.id : x.key
+  }
+
+  function toggleSelect(x) {
+    const key = rowKey(x)
+    setSelected((sel) => (sel.includes(key) ? sel.filter((k) => k !== key) : [...sel, key]))
+  }
+
+  function startSelect(x) {
+    setSelecting(true)
+    setSelected([rowKey(x)])
+    setMenuFor(null)
+  }
+
+  function exitSelect() {
+    setSelecting(false)
+    setSelected([])
+    setReport(false)
+    setConfirmIgnore(null)
+    setMergeName(null)
+  }
+
+  function holdStart(x) {
+    if (selecting) return
     press.current.long = false
     press.current.timer = setTimeout(() => {
       press.current.long = true
-      setSelecting(true)
-      setSelected([d.item.id])
+      startSelect(x)
       navigator.vibrate?.(20)
     }, 450)
   }
@@ -199,39 +255,32 @@ export default function Home({ db, update, push }) {
     clearTimeout(press.current.timer)
   }
 
-  function toggleSelect(d) {
-    setSelected((sel) =>
-      sel.includes(d.item.id) ? sel.filter((id) => id !== d.item.id) : [...sel, d.item.id],
-    )
-  }
-
-  function exitCompare() {
-    setComparing(false)
-    setSelected([])
-    setReport(false)
-  }
-
-  function exitSelect() {
-    setSelecting(false)
-    setSelected([])
-    setConfirmIgnore(false)
-    setMergeName(null)
-  }
-
   function doMerge() {
     const name = mergeName.trim()
     if (!name) return
     const ids = selectedIds
     update((d) => mergeItems(d, ids, name))
     exitSelect()
+    toast(`Merged into “${name}”`)
   }
 
-  // "Don't import anymore": same delete-&-ignore as the Items tab — removes
-  // the items and their prices, and the flyer import skips that product type.
   function doIgnore() {
-    const ids = selected
+    const ids = confirmIgnore
+    const names = db.items.filter((i) => ids.includes(i.id)).map((i) => i.name).join(', ')
     update((d) => ignoreItems(d, ids))
     exitSelect()
+    toast(`Won't import anymore: ${names}`)
+  }
+
+  // ---------- add-a-price from All items (needs a store) ----------
+  function goAdd(target, storeId) {
+    setPendingAdd(null)
+    push({ name: 'addPrice', storeId, presetItemId: target.itemId, presetQuery: target.query })
+  }
+
+  function startAdd(target) {
+    if (currentStore) goAdd(target, currentStore.id)
+    else setPendingAdd(target)
   }
 
   if (report && compareRows.length >= 2) {
@@ -240,348 +289,380 @@ export default function Home({ db, update, push }) {
         db={db}
         rows={compareRows}
         onBack={() => setReport(false)}
-        onDone={exitCompare}
+        onDone={exitSelect}
       />
     )
   }
 
+  const noExactMatch =
+    q.trim() && !db.items.some((i) => i.name.toLowerCase() === q.trim().toLowerCase())
+
   return (
-    <div className="screen" style={comparing || selecting ? { paddingBottom: 170 } : undefined}>
-      <div className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1>{comparing ? 'Pick items ⚖️' : selecting ? 'Selected items' : meat ? '🥩 Meat deals' : '🛒 Grocery deals'}</h1>
-        {!comparing && !selecting && (
-          <div style={{ display: 'flex', gap: 6 }}>
-            {meat && (
-              <button
-                className="btn small ghost"
-                onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
-              >
-                {proc === 'all' ? 'All' : PROCESSING_LABEL[proc]}
-              </button>
-            )}
-            {allDeals.length >= 2 && (
-              <button className="btn small ghost" onClick={() => setComparing(true)}>⚖️ Compare</button>
-            )}
-            <button
-              className={`btn small ghost${searchOpen ? ' on' : ''}`}
-              aria-label="Search deals"
-              onClick={() => {
-                if (searchOpen) setQ('')
-                setSearchOpen(!searchOpen)
-              }}
-            >
-              🔍
-            </button>
-          </div>
-        )}
+    <div className="screen" onClick={() => menuFor && setMenuFor(null)}>
+      {/* ---------- selection action bar ---------- */}
+      {selecting ? (
+        <div className="action-bar">
+          <button aria-label="Exit selection" onClick={exitSelect}>✕</button>
+          <span className="count">{selected.length} selected</span>
+          <button disabled={!compareOk} title="Compare prices (same-type products)" onClick={() => setReport(true)}>
+            ⚖️ Compare
+          </button>
+          <button
+            disabled={!(selectedItems.length >= 2 && canMerge(selectedItems))}
+            title="Merge duplicates into one product"
+            onClick={() => setMergeName(suggestName(selectedItems, recordCounts))}
+          >
+            🔗 Merge
+          </button>
+          <button
+            disabled={selectedItems.length === 0}
+            title="Delete and never import again"
+            onClick={() => setConfirmIgnore(selectedIds)}
+          >
+            🚫 Don't import
+          </button>
+        </div>
+      ) : (
+        <div className="topbar" style={{ justifyContent: 'space-between' }}>
+          <h1>Smart Price</h1>
+          <button
+            className="store-chip"
+            title="Change where you are"
+            onClick={() => setStoreSheet(true)}
+          >
+            📍
+            {currentStore
+              ? storeLogo(currentStore.name)
+                ? <img src={storeLogo(currentStore.name)} alt={currentStore.name} />
+                : currentStore.name
+              : 'Pick a store'}
+            <span style={{ opacity: 0.5 }}>▾</span>
+          </button>
+        </div>
+      )}
+
+      {/* ---------- search (always visible; "/" focuses it) ---------- */}
+      <div className="searchbar">
+        <input
+          type="search"
+          placeholder={deals ? 'Search deals…' : 'Search your items…'}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
       </div>
 
-      {searchOpen && !comparing && !selecting && (
-        <label className="field" style={{ marginBottom: 8 }}>
-          <input
-            type="search"
-            placeholder="Search deals…"
-            value={q}
-            autoFocus
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </label>
-      )}
-
-      {comparing && (
-        <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
-          Tap the deals you want to compare — only same-type items (weight with weight).
-        </p>
-      )}
+      {/* ---------- view switch ---------- */}
+      <div className="seg" style={{ marginBottom: 12 }}>
+        <button className={deals ? 'on' : ''} onClick={() => { setView('deals'); exitSelect() }}>🏷️ Deals</button>
+        <button className={!deals ? 'on' : ''} onClick={() => { setView('items'); exitSelect() }}>📋 All items</button>
+      </div>
 
       {selecting && (
-        <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
-          Tap more deals to select them. Merge duplicates, or 🚫 Don't import what you don't care about.
+        <p className="muted small" style={{ marginTop: -4, marginBottom: 10 }}>
+          Tap rows to select. Compare needs same-type products (weight with weight).
         </p>
       )}
 
-      {!comparing && !selecting && (
-        <Chips style={{ marginBottom: 8 }}>
-          <button className={meat ? 'on' : ''} onClick={() => setMode('meat')}>🥩 Meat</button>
-          <button className={meat ? '' : 'on'} onClick={() => setMode('grocery')}>🛒 Groceries</button>
-        </Chips>
-      )}
-
-      <Chips style={{ marginBottom: 8 }}>
-        {RATING_KEYS.map((r) => (
-            <button
-            key={r}
-            className={ratingsOn.has(r) ? 'on' : ''}
-            onClick={() => toggle(ratingsOn, setRatingsOn, r)}
-          >
-            {RATING[r].label.replace(' deal', '')}
-          </button>
-        ))}
-      </Chips>
-      {meat && (
-        <Chips style={{ marginBottom: 8 }}>
-          <button
-            aria-label="Clear meat type selection"
-            onClick={() => setTypesOff(new Set(MEAT_TYPES))}
-          >
-            ✕
-          </button>
-          <button
-            aria-label="Select all meat types"
-            onClick={() => setTypesOff(new Set())}
-          >
-            All
-          </button>
-          {MEAT_TYPES.filter((t) => groups[t]?.length).map((t) => (
-            <button
-              key={t}
-              className={typesOff.has(t) ? '' : 'on'}
-              onClick={() => toggle(typesOff, setTypesOff, t)}
-            >
-              {MEAT_TYPE_LABEL[t]}
-            </button>
-          ))}
-        </Chips>
-      )}
-      {!meat && groceryCats.length > 1 && (
-        <Chips style={{ marginBottom: 8 }}>
-          <button
-            aria-label="Clear category selection"
-            onClick={() => setCatsOff(new Set(GROCERY_TYPES))}
-          >
-            ✕
-          </button>
-          <button
-            aria-label="Select all categories"
-            onClick={() => setCatsOff(new Set())}
-          >
-            All
-          </button>
-          {groceryCats.map((t) => (
-            <button
-              key={t}
-              className={catsOff.has(t) ? '' : 'on'}
-              onClick={() => toggle(catsOff, setCatsOff, t)}
-            >
-              {GROCERY_TYPE_LABEL[t]}
-            </button>
-          ))}
-        </Chips>
-      )}
-      {dealStores.length > 1 && (
-        <Chips style={{ marginBottom: 8 }}>
-          <button
-            aria-label="Clear store selection"
-            onClick={() => setStoresOff(new Set(dealStores.map((s) => s.id)))}
-          >
-            ✕
-          </button>
-          <button
-            aria-label="Select all stores"
-            onClick={() => setStoresOff(new Set())}
-          >
-            All
-          </button>
-          {dealStores.map((s) => (
-            <button
-              key={s.id}
-              className={storesOff.has(s.id) ? '' : 'on'}
-              onClick={() => toggle(storesOff, setStoresOff, s.id)}
-            >
-              {s.name}
-            </button>
-          ))}
-        </Chips>
-      )}
-
-      <Chips style={{ marginBottom: 8 }}>
-        <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)', flex: '0 0 auto' }}>Sort</span>
-        {[['price', '$ Cheapest'], ['deal', '🔥 Best deal'], ['name', 'A–Z']].map(([k, label]) => (
-          <button key={k} className={sort === k ? 'on' : ''} onClick={() => setSort(k)}>
-            {label}
-          </button>
-        ))}
-        <button
-          className={showExpired ? 'on' : ''}
-          onClick={() => setShowExpired(!showExpired)}
-          title="Also show expired flyer prices"
-        >
-          ⏰ Expired
-        </button>
-      </Chips>
-
-      {sections.length === 0 && (
-        <div className="empty" style={{ padding: 32 }}>
-          No {meat ? 'meat' : 'grocery'} deals match the filters.
-          <div className="sub" style={{ marginTop: 6 }}>
-            {meat
-              ? 'Deals appear here after the weekly flyer import finds prices below the usual Toronto market price.'
-              : 'Non-meat products with a current price show up here after the weekly flyer import (or a manual entry).'}
-          </div>
-        </div>
-      )}
-
-      {sections.map(({ key, label, list }) => (
-        <div key={key} style={{ marginTop: 10 }}>
-          {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
-          <div className="card list" style={{ padding: '2px 14px' }}>
-            {list.map((d) => {
-              const isSel = selected.includes(d.item.id)
-              // Kind restriction only applies to ⚖️ Compare (same-kind report);
-              // hold-to-select for ignoring has no such constraint. By-piece
-              // rows have no comparable price, so Compare never accepts them.
-              const disabled = comparing &&
-                (d.byPiece || (compareKind && d.item.kind !== compareKind && !isSel))
-              return (
+      {/* ================= DEALS VIEW ================= */}
+      {deals && (
+        <>
+          <Chips style={{ marginBottom: 8 }}>
+            <button className={`no-check${meat ? ' on' : ''}`} onClick={() => setMode('meat')}>🥩 Meat</button>
+            <button className={`no-check${meat ? '' : ' on'}`} onClick={() => setMode('grocery')}>🛒 Groceries</button>
+            {meat && (
               <button
-                key={d.key}
-                className="row"
-                style={{
-                  ...(isSel ? { background: 'var(--accent-soft)', borderRadius: 10, padding: '13px 8px' } : null),
-                  ...(disabled ? { opacity: 0.35 } : null),
-                }}
-                onPointerDown={() => holdStart(d)}
-                onPointerUp={holdEnd}
-                onPointerLeave={holdEnd}
-                onPointerCancel={holdEnd}
-                onContextMenu={(e) => e.preventDefault()}
-                onClick={() => {
-                  if (press.current.long) { press.current.long = false; return }
-                  if (comparing) return !disabled && toggleSelect(d)
-                  if (selecting) return toggleSelect(d)
-                  push({ name: 'item', itemId: d.item.id })
-                }}
+                className="no-check"
+                style={{ marginLeft: 'auto' }}
+                title="Natural / ultra-processed filter"
+                onClick={() => setProc(proc === 'all' ? 'natural' : proc === 'natural' ? 'ultra' : 'all')}
               >
-                <div className="grow">
-                  <div className="title">
-                    {(comparing || selecting) ? (isSel ? '☑️ ' : '⬜ ') : ''}
-                    {d.item.name}
-                    {!comparing && !selecting && <PhotoLink name={d.item.name} />}
-                  </div>
-                  <div className="sub row-store">
-                    {storeLogo(d.store.name) ? (
-                      <img className="row-logo" src={storeLogo(d.store.name)} alt={d.store.name} title={d.store.name} />
-                    ) : (
-                      <span>{d.store.name}</span>
-                    )}
-                    {d.rec.validUntil && (
-                      <span style={{ color: d.expired ? 'var(--muted)' : UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
-                        {d.expired ? 'ended' : 'until'} {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </span>
-                    )}
-                    {d.nRecs > 1 && (
-                      <span className="muted" title={`${d.nRecs} prices in history`}>
-                        📊 {d.nRecs}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="right">
-                  <div className="title">{fmtDisplay(d.norm, d.byPiece ? 'count' : d.item.kind, db.displayWeightUnit)}</div>
-                  {d.byPiece && <span className="badge lvl-ok">📦 by piece</span>}
-                  {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
-                </div>
-                {/* Send the deal to the RV Groceries shopping list (rvlist.js).
-                    span, not button: rows are already buttons. */}
-                {!comparing && !selecting && (() => {
-                  const st = rvState[d.key] ??
-                    (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)
-                  return (
-                    <span
-                      role="button"
-                      aria-label="Add to RV Groceries list"
-                      className={`rv-add${st ? ' on' : ''}`}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (!st) sendToRv(d)
-                      }}
-                    >
-                      {{ pending: '…', ok: '✓', err: '!' }[st] ?? '+'}
-                    </span>
-                  )
-                })()}
+                {proc === 'all' ? 'All kinds' : PROCESSING_LABEL[proc]}
               </button>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-
-      {comparing && (
-        <div className="compare-tray">
-          <div className="small" style={{ marginBottom: 8 }}>
-            {selectedDeals.length === 0 ? (
-              <span className="muted">Nothing selected yet.</span>
-            ) : (
-              selectedDeals.map((d) => (
-                <span key={d.item.id} className="badge lvl-first" style={{ marginRight: 6, marginBottom: 4, display: 'inline-block' }}>
-                  {d.item.name}
-                </span>
-              ))
             )}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn ghost" onClick={exitCompare}>Cancel</button>
-            <button className="btn" disabled={selectedDeals.length < 2} onClick={() => setReport(true)}>
-              Compare {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
-            </button>
-          </div>
-        </div>
-      )}
+          </Chips>
 
-      {selecting && (
-        <div className="compare-tray">
-          <div className="small" style={{ marginBottom: 8 }}>
-            {selectedDeals.length === 0 ? (
-              <span className="muted">Nothing selected yet.</span>
-            ) : (
-              selectedDeals.map((d) => (
-                <span key={d.item.id} className="badge lvl-first" style={{ marginRight: 6, marginBottom: 4, display: 'inline-block' }}>
-                  {d.item.name}
-                </span>
-              ))
-            )}
-          </div>
-          {selectedItems.length >= 2 && !canMerge(selectedItems) && (
-            <p className="muted small" style={{ marginTop: -4, marginBottom: 8 }}>
-              Can't merge: these aren't the same type (weight with weight).
-            </p>
+          <Chips style={{ marginBottom: 8 }}>
+            {RATING_KEYS.map((r) => (
+              <button
+                key={r}
+                className={ratingsOn.has(r) ? 'on' : ''}
+                onClick={() => toggle(ratingsOn, setRatingsOn, r)}
+              >
+                {RATING[r].label.replace(' deal', '')}
+              </button>
+            ))}
+          </Chips>
+
+          {meat && (
+            <Chips style={{ marginBottom: 8 }}>
+              <button className="no-check" aria-label="Clear meat type selection" onClick={() => setTypesOff(new Set(MEAT_TYPES))}>✕</button>
+              <button className="no-check" aria-label="Select all meat types" onClick={() => setTypesOff(new Set())}>All</button>
+              {MEAT_TYPES.filter((t) => groups[t]?.length).map((t) => (
+                <button key={t} className={typesOff.has(t) ? '' : 'on'} onClick={() => toggle(typesOff, setTypesOff, t)}>
+                  {MEAT_TYPE_LABEL[t]}
+                </button>
+              ))}
+            </Chips>
           )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn ghost" onClick={exitSelect}>Cancel</button>
+          {!meat && groceryCats.length > 1 && (
+            <Chips style={{ marginBottom: 8 }}>
+              <button className="no-check" aria-label="Clear category selection" onClick={() => setCatsOff(new Set(GROCERY_TYPES))}>✕</button>
+              <button className="no-check" aria-label="Select all categories" onClick={() => setCatsOff(new Set())}>All</button>
+              {groceryCats.map((t) => (
+                <button key={t} className={catsOff.has(t) ? '' : 'on'} onClick={() => toggle(catsOff, setCatsOff, t)}>
+                  {GROCERY_TYPE_LABEL[t]}
+                </button>
+              ))}
+            </Chips>
+          )}
+          {dealStores.length > 1 && (
+            <Chips style={{ marginBottom: 8 }}>
+              <button className="no-check" aria-label="Clear store selection" onClick={() => setStoresOff(new Set(dealStores.map((s) => s.id)))}>✕</button>
+              <button className="no-check" aria-label="Select all stores" onClick={() => setStoresOff(new Set())}>All</button>
+              {dealStores.map((s) => (
+                <button key={s.id} className={storesOff.has(s.id) ? '' : 'on'} onClick={() => toggle(storesOff, setStoresOff, s.id)}>
+                  {s.name}
+                </button>
+              ))}
+            </Chips>
+          )}
+
+          <Chips style={{ marginBottom: 8 }}>
+            <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)', flex: '0 0 auto' }}>Sort</span>
+            {[['price', '$ Cheapest'], ['deal', '🔥 Best deal'], ['name', 'A–Z']].map(([k, label]) => (
+              <button key={k} className={`no-check${sort === k ? ' on' : ''}`} onClick={() => setSort(k)}>
+                {label}
+              </button>
+            ))}
             <button
-              className="btn danger"
-              disabled={selectedDeals.length === 0}
-              onClick={() => setConfirmIgnore(true)}
+              className={showExpired ? 'on' : ''}
+              onClick={() => setShowExpired(!showExpired)}
+              title="Also show expired flyer prices"
             >
-              🚫 Don't import {selectedDeals.length >= 2 ? `(${selectedDeals.length})` : ''}
+              ⏰ Expired
             </button>
-            <button
-              className="btn"
-              disabled={!canMerge(selectedItems)}
-              onClick={() => setMergeName(suggestName(selectedItems, recordCounts))}
-            >
-              🔗 Merge {selectedItems.length >= 2 ? `(${selectedItems.length})` : ''}
-            </button>
+          </Chips>
+
+          {sections.length === 0 && (
+            <div className="empty" style={{ padding: 32 }}>
+              <div className="ico">🏷️</div>
+              No {meat ? 'meat' : 'grocery'} deals match the filters.
+              <div className="sub small" style={{ marginTop: 6 }}>
+                {meat
+                  ? 'Deals appear here after the weekly flyer import finds prices below the usual Toronto market price.'
+                  : 'Non-meat products with a current price show up here after the weekly flyer import (or a manual entry).'}
+              </div>
+            </div>
+          )}
+
+          <div className="grid-2">
+            {sections.map(({ key, label, list }) => (
+              <div key={key} style={{ marginTop: 10 }}>
+                {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
+                <div className="card list" style={{ padding: '2px 12px' }}>
+                  {list.map((d) => {
+                    const isSel = selected.includes(d.item.id)
+                    const delta = lastBuyDelta(db, d)
+                    return (
+                      <button
+                        key={d.key}
+                        className={`row${isSel ? ' sel' : ''}`}
+                        onPointerDown={() => holdStart(d)}
+                        onPointerUp={holdEnd}
+                        onPointerLeave={holdEnd}
+                        onPointerCancel={holdEnd}
+                        onContextMenu={(e) => e.preventDefault()}
+                        onClick={() => {
+                          if (press.current.long) { press.current.long = false; return }
+                          if (selecting) return toggleSelect(d)
+                          push({ name: 'item', itemId: d.item.id })
+                        }}
+                      >
+                        <div className="grow">
+                          <div className="title">
+                            {selecting ? (isSel ? '☑️ ' : '⬜ ') : ''}
+                            {d.item.name}
+                            {!selecting && <PhotoLink name={d.item.name} />}
+                          </div>
+                          <div className="sub row-store">
+                            {storeLogo(d.store.name) ? (
+                              <img className="row-logo" src={storeLogo(d.store.name)} alt={d.store.name} title={d.store.name} />
+                            ) : (
+                              <span>{d.store.name}</span>
+                            )}
+                            {d.rec.validUntil && (
+                              <span style={{ color: d.expired ? 'var(--muted)' : UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
+                                {d.expired ? 'ended' : 'until'} {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              </span>
+                            )}
+                            {d.nRecs > 1 && (
+                              <span className="muted" title={`${d.nRecs} prices in history`}>📊 {d.nRecs}</span>
+                            )}
+                            {delta != null && (
+                              <span
+                                className={`delta ${delta < 0 ? 'down' : 'up'}`}
+                                title="vs the previous price in your history"
+                              >
+                                {delta < 0 ? '▼' : '▲'} {Math.abs(delta)}% vs last
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="right">
+                          <div className="title">{fmtDisplay(d.norm, d.byPiece ? 'count' : d.item.kind, db.displayWeightUnit)}</div>
+                          {d.byPiece && <span className="badge lvl-ok">📦 by piece</span>}
+                          {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
+                        </div>
+                        {!selecting && (() => {
+                          const st = rvState[d.key] ?? (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)
+                          return (
+                            <span
+                              role="button"
+                              aria-label="Add to RV Groceries list"
+                              className={`rv-add${st ? ' on' : ''}`}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (!st) sendToRv(d)
+                              }}
+                            >
+                              {{ pending: '…', ok: '✓', err: '!' }[st] ?? '+'}
+                            </span>
+                          )
+                        })()}
+                        {!selecting && (
+                          <RowMenu
+                            open={menuFor === d.key}
+                            onOpen={() => setMenuFor(menuFor === d.key ? null : d.key)}
+                            actions={[
+                              ['⚖️', 'Compare with…', () => startSelect(d)],
+                              ['🔗', 'Merge with…', () => startSelect(d)],
+                              ['🚫', "Don't import", () => { setMenuFor(null); setConfirmIgnore([d.item.id]) }],
+                            ]}
+                          />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+        </>
       )}
 
+      {/* ================= ALL ITEMS VIEW ================= */}
+      {!deals && (
+        <>
+          {noExactMatch && !selecting && (
+            <button className="btn tonal" style={{ marginBottom: 12 }} onClick={() => startAdd({ query: q.trim() })}>
+              + Add “{q.trim()}” with a price
+            </button>
+          )}
+
+          {itemRows.length === 0 && (
+            <div className="empty">
+              <div className="ico">🧺</div>
+              {q ? 'No items match.' : 'No items yet — tap ＋ to log your first price.'}
+            </div>
+          )}
+
+          {itemRows.length > 0 && (
+            <div className="card list" style={{ padding: '2px 12px' }}>
+              {itemRows.map((row) => {
+                const { item, variant, label, recs, key } = row
+                const cheapest = pricesByStore(db, item.id, variant)[0]
+                const norms = recs.map((r) => recordNorm(r, item, db)).filter((n) => n != null)
+                const best = norms.length ? Math.min(...norms) : null
+                const isSel = selected.includes(key)
+                return (
+                  <button
+                    key={key}
+                    className={`row${isSel ? ' sel' : ''}`}
+                    onPointerDown={() => holdStart(row)}
+                    onPointerUp={holdEnd}
+                    onPointerLeave={holdEnd}
+                    onPointerCancel={holdEnd}
+                    onContextMenu={(e) => e.preventDefault()}
+                    onClick={() => {
+                      if (press.current.long) { press.current.long = false; return }
+                      if (selecting) return toggleSelect(row)
+                      push({ name: 'item', itemId: item.id, variant })
+                    }}
+                  >
+                    <div className="grow">
+                      <div className="title" style={{ whiteSpace: 'normal' }}>
+                        {selecting ? (isSel ? '☑️ ' : '⬜ ') : ''}
+                        {item.name}
+                        {!selecting && <PhotoLink name={item.name} />}
+                        {label && <span className="muted small"> ({label})</span>}
+                        {(() => {
+                          const fi = flyerInfo(recs[0])
+                          return fi && (
+                            <FlyerLink fi={fi} className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 6, fontSize: 11, verticalAlign: 'middle' }} />
+                          )
+                        })()}
+                      </div>
+                      <div className="sub">
+                        {recs.length} record{recs.length === 1 ? '' : 's'}
+                        {cheapest ? ` · cheapest at ${cheapest.store.name}` : ''}
+                      </div>
+                    </div>
+                    <div className="right">
+                      <div className="title" style={{ fontSize: 15, color: 'var(--accent)' }}>
+                        {best != null
+                          ? fmtDisplay(best, item.kind, db.displayWeightUnit)
+                          : recs[0] ? `${fmtMoney(effectivePrice(db, recs[0]))} / ${fmtQty(recs[0].qty, recs[0].unit)}` : '—'}
+                      </div>
+                      <div className="sub">{best != null ? 'best' : recs.length ? 'by piece' : ''}</div>
+                    </div>
+                    {!selecting && (
+                      <span
+                        role="button"
+                        aria-label={`Add price for ${item.name}`}
+                        className="row-add"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startAdd({ itemId: item.id })
+                        }}
+                      >
+                        +
+                      </span>
+                    )}
+                    {!selecting && (
+                      <RowMenu
+                        open={menuFor === key}
+                        onOpen={() => setMenuFor(menuFor === key ? null : key)}
+                        actions={[
+                          ['⚖️', 'Compare with…', () => startSelect(row)],
+                          ['🔗', 'Merge with…', () => startSelect(row)],
+                          ['🚫', "Don't import", () => { setMenuFor(null); setConfirmIgnore([item.id]) }],
+                        ]}
+                      />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ---------- dialogs ---------- */}
       {confirmIgnore && (
-        <div className="modal-backdrop" onClick={() => setConfirmIgnore(false)}>
-          <div className="card" style={{ width: 'min(92vw, 400px)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => setConfirmIgnore(null)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Don't import anymore 🚫</h2>
             <p className="muted small">
-              {selectedDeals.map((d) => d.item.name).join(', ')}
+              {db.items.filter((i) => confirmIgnore.includes(i.id)).map((i) => i.name).join(', ')}
             </p>
-            <ul className="muted small" style={{ paddingLeft: 18, margin: '4px 0 12px' }}>
-              <li>Removes the product{selected.length === 1 ? '' : 's'} and all saved prices — this can't be undone.</li>
+            <ul className="muted small" style={{ paddingLeft: 18, margin: '8px 0 14px' }}>
+              <li>Removes the product{confirmIgnore.length === 1 ? '' : 's'} and all saved prices — this can't be undone.</li>
               <li>The weekly flyer import will skip this <b>kind</b> of product from now on, any brand.</li>
               <li>Undo the ignore later in Settings.</li>
             </ul>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn ghost" onClick={() => setConfirmIgnore(false)}>Cancel</button>
+              <button className="btn ghost" onClick={() => setConfirmIgnore(null)}>Cancel</button>
               <button className="btn danger" onClick={doIgnore}>Don't import</button>
             </div>
           </div>
@@ -590,12 +671,12 @@ export default function Home({ db, update, push }) {
 
       {mergeName != null && (
         <div className="modal-backdrop" onClick={() => setMergeName(null)}>
-          <div className="card" style={{ width: 'min(92vw, 400px)' }} onClick={(e) => e.stopPropagation()}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Merge into one product 🔗</h2>
-            <p className="muted small" style={{ marginTop: -6 }}>
+            <p className="muted small" style={{ marginTop: -4 }}>
               {selectedItems.map((i) => i.name).join(' + ')}
             </p>
-            <label className="field">
+            <label className="field" style={{ marginTop: 10 }}>
               <span className="lbl">Final name</span>
               <input
                 type="text"
@@ -605,7 +686,7 @@ export default function Home({ db, update, push }) {
                 onKeyDown={(e) => e.key === 'Enter' && doMerge()}
               />
             </label>
-            <ul className="muted small" style={{ paddingLeft: 18, margin: '4px 0 12px' }}>
+            <ul className="muted small" style={{ paddingLeft: 18, margin: '4px 0 14px' }}>
               <li>{mergeRecs.length} price{mergeRecs.length === 1 ? '' : 's'} kept, with their history.</li>
               {(() => {
                 const t = targetUnit(selectedItems, mergeRecs)
@@ -623,9 +704,49 @@ export default function Home({ db, update, push }) {
         </div>
       )}
 
-      <div className="small muted" style={{ textAlign: 'center', marginTop: 16, opacity: 0.6 }}>
+      {storeSheet && (
+        <StoreSheet db={db} update={update} onClose={() => setStoreSheet(false)} />
+      )}
+
+      {pendingAdd && (
+        <StoreSheet
+          db={db}
+          update={update}
+          onClose={() => setPendingAdd(null)}
+          onPick={(store) => goAdd(pendingAdd, store.id)}
+        />
+      )}
+
+      <div className="small muted" style={{ textAlign: 'center', marginTop: 20, opacity: 0.6 }}>
         Released {new Date(__BUILD_DATE__).toLocaleString()}
       </div>
     </div>
+  )
+}
+
+// ⋮ overflow menu on a row — makes Merge / Don't import / Compare
+// discoverable without knowing the long-press gesture.
+function RowMenu({ open, onOpen, actions }) {
+  return (
+    <span className="menu-wrap hover-reveal" onPointerDown={(e) => e.stopPropagation()}>
+      <span
+        role="button"
+        aria-label="More actions"
+        className="icon-btn"
+        style={{ width: 32, height: 32, fontSize: 16 }}
+        onClick={(e) => { e.stopPropagation(); onOpen() }}
+      >
+        ⋮
+      </span>
+      {open && (
+        <span className="menu" onClick={(e) => e.stopPropagation()}>
+          {actions.map(([ico, label, fn]) => (
+            <button key={label} onClick={fn}>
+              <span>{ico}</span> {label}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
   )
 }
