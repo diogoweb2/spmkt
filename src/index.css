@@ -640,6 +640,8 @@ html[data-theme='dark'] .skeleton::after {
 
   /* deals & item lists in two columns */
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; align-items: start; }
+  /* long section lists scroll instead of stretching the column */
+  .grid-2 .card.list { max-height: 480px; overflow-y: auto; overscroll-behavior: contain; }
   .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; align-items: start; }
 
   .compare-tray {
