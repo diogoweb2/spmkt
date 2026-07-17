@@ -24,15 +24,20 @@ function untilUrgency(ts) {
 // excellent + good). 🛒 Groceries mode is one flat list of non-meat deals
 // with the same rating filter plus category (supermarket section) + store
 // filters; both modes share the $/🔥/A–Z sort.
-// Expired flyer prices never show.
+// Expired flyer prices never show unless the ⏰ Expired toggle is on
+// (rows then show "ended <date>"). 🔍 in the topbar opens a name search.
+// Rows with >1 record in history show a 📊 count.
 // Two multi-select modes: ⚖️ Compare button (same-kind only) vs hold-to-
 // select any row (🚫 Don't import — delete & ignore, no kind restriction).
 // Store picking lives in the Location tab.
 const RATING_KEYS = Object.keys(RATING)
 
 export default function Home({ db, update, push }) {
-  const groups = useMemo(() => meatDeals(db), [db])
-  const grocery = useMemo(() => groceryDeals(db), [db])
+  // ⏰ Expired toggle: include expired flyer records in the deal picking
+  // (rows get an "ended <date>" mark); off = the normal never-show rule.
+  const [showExpired, setShowExpired] = useSessionState('home.showExpired', false)
+  const groups = useMemo(() => meatDeals(db, { includeExpired: showExpired }), [db, showExpired])
+  const grocery = useMemo(() => groceryDeals(db, { includeExpired: showExpired }), [db, showExpired])
   // '🥩 meat' (classified deals) vs '🛒 grocery' (everything else; category
   // chips instead of meat-type chips, no processing filter).
   // Mode + filters live in sessionStorage so they survive tab switches
@@ -45,6 +50,9 @@ export default function Home({ db, update, push }) {
   const [catsOff, setCatsOff] = useSessionState('home.catsOff', () => new Set(), { set: true }) // grocery category filter
   const [proc, setProc] = useSessionState('home.proc', 'all') // cycles all -> natural -> ultra
   const [sort, setSort] = useSessionState('home.sort', 'price') // 'price' | 'deal' | 'name'
+  // 🔍 icon in the topbar toggles a name-search field; closing it clears q.
+  const [searchOpen, setSearchOpen] = useSessionState('home.searchOpen', false)
+  const [q, setQ] = useSessionState('home.q', '')
   // Two separate multi-select modes (same split as the Items tab):
   // - "comparing": explicit ⚖️ Compare button, same-kind only, tray runs the report.
   // - "selecting": hold a row, any kind, tray only offers 🚫 Don't import (ignore).
@@ -110,9 +118,11 @@ export default function Home({ db, update, push }) {
   // Items with no market data (rating null) always pass the rating filter,
   // which applies in both modes. Grocery mode adds the category filter; only
   // meat has the processing filter.
+  const qNorm = q.trim().toLowerCase()
   const show = (d) =>
     !storesOff.has(d.store.id) &&
     (d.rating == null || ratingsOn.has(d.rating)) &&
+    (!qNorm || d.item.name.toLowerCase().includes(qNorm)) &&
     (meat
       ? proc === 'all' || (proc === 'ultra') === d.ultra
       : !catsOff.has(d.gtype))
@@ -232,9 +242,31 @@ export default function Home({ db, update, push }) {
             {allDeals.length >= 2 && (
               <button className="btn small ghost" onClick={() => setComparing(true)}>⚖️ Compare</button>
             )}
+            <button
+              className={`btn small ghost${searchOpen ? ' on' : ''}`}
+              aria-label="Search deals"
+              onClick={() => {
+                if (searchOpen) setQ('')
+                setSearchOpen(!searchOpen)
+              }}
+            >
+              🔍
+            </button>
           </div>
         )}
       </div>
+
+      {searchOpen && !comparing && !selecting && (
+        <label className="field" style={{ marginBottom: 8 }}>
+          <input
+            type="search"
+            placeholder="Search deals…"
+            value={q}
+            autoFocus
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </label>
+      )}
 
       {comparing && (
         <p className="muted small" style={{ marginTop: -8, marginBottom: 10 }}>
@@ -349,6 +381,13 @@ export default function Home({ db, update, push }) {
             {label}
           </button>
         ))}
+        <button
+          className={showExpired ? 'on' : ''}
+          onClick={() => setShowExpired(!showExpired)}
+          title="Also show expired flyer prices"
+        >
+          ⏰ Expired
+        </button>
       </Chips>
 
       {sections.length === 0 && (
@@ -406,8 +445,13 @@ export default function Home({ db, update, push }) {
                       <span>{d.store.name}</span>
                     )}
                     {d.rec.validUntil && (
-                      <span style={{ color: UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
-                        until {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      <span style={{ color: d.expired ? 'var(--muted)' : UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
+                        {d.expired ? 'ended' : 'until'} {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </span>
+                    )}
+                    {d.nRecs > 1 && (
+                      <span className="muted" title={`${d.nRecs} prices in history`}>
+                        📊 {d.nRecs}
                       </span>
                     )}
                   </div>
