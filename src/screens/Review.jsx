@@ -233,17 +233,28 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
 
 function PendingCard({ entry, db, onDiscard }) {
   const [url, setUrl] = useState(null)
+  const [broken, setBroken] = useState(false)
   const store = db.stores.find((s) => s.id === entry.storeId)
   useEffect(() => {
     let on = true
-    photoUrl(entry).then((u) => on && setUrl(u)).catch(() => {})
+    photoUrl(entry)
+      .then((u) => on && setUrl(u))
+      .catch((e) => {
+        // Preview needs Storage read permission (deploy storage.rules); the
+        // photo is still processed server-side regardless. Show a placeholder
+        // rather than an endless skeleton.
+        if (on) { setBroken(true); console.warn('photo preview unavailable:', e.code ?? e.message) }
+      })
     return () => { on = false }
   }, [entry])
+  const thumbStyle = { width: 74, height: 74, flexShrink: 0, borderRadius: 10 }
   return (
     <div className="card review-card" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-      {url
-        ? <img src={url} alt="queued label" style={{ width: 74, height: 74, objectFit: 'cover', borderRadius: 10, flexShrink: 0 }} />
-        : <div className="skeleton" style={{ width: 74, height: 74, flexShrink: 0 }} />}
+      {broken
+        ? <div style={{ ...thumbStyle, display: 'grid', placeItems: 'center', fontSize: 28, background: 'var(--md-surface-container)' }}>📷</div>
+        : url
+        ? <img src={url} alt="queued label" onError={() => setBroken(true)} style={{ ...thumbStyle, objectFit: 'cover' }} />
+        : <div className="skeleton" style={thumbStyle} />}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="title small" style={{ fontWeight: 700 }}>
           {store?.name ?? 'Unknown store'} · {new Date(entry.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
