@@ -4,6 +4,7 @@ import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GR
 import { ignoreItems } from '../lib/ignore'
 import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
+import useSessionState from '../lib/useSessionState'
 import PhotoLink from '../components/PhotoLink'
 import CompareReport from '../components/CompareReport'
 import Chips from '../components/Chips'
@@ -34,14 +35,16 @@ export default function Home({ db, update, push }) {
   const grocery = useMemo(() => groceryDeals(db), [db])
   // '🥩 meat' (classified deals) vs '🛒 grocery' (everything else; category
   // chips instead of meat-type chips, no processing filter).
-  const [mode, setMode] = useState('meat')
+  // Mode + filters live in sessionStorage so they survive tab switches
+  // (Home unmounts when leaving the tab); reset when the browser tab closes.
+  const [mode, setMode] = useSessionState('home.mode', 'meat')
   const meat = mode === 'meat'
-  const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
-  const [storesOff, setStoresOff] = useState(() => new Set())
-  const [typesOff, setTypesOff] = useState(() => new Set())
-  const [catsOff, setCatsOff] = useState(() => new Set()) // grocery category filter
-  const [proc, setProc] = useState('all') // cycles all -> natural -> ultra
-  const [sort, setSort] = useState('price') // 'price' | 'deal' | 'name'
+  const [ratingsOn, setRatingsOn] = useSessionState('home.ratingsOn', () => new Set(['excellent', 'good']), { set: true })
+  const [storesOff, setStoresOff] = useSessionState('home.storesOff', () => new Set(), { set: true })
+  const [typesOff, setTypesOff] = useSessionState('home.typesOff', () => new Set(), { set: true })
+  const [catsOff, setCatsOff] = useSessionState('home.catsOff', () => new Set(), { set: true }) // grocery category filter
+  const [proc, setProc] = useSessionState('home.proc', 'all') // cycles all -> natural -> ultra
+  const [sort, setSort] = useSessionState('home.sort', 'price') // 'price' | 'deal' | 'name'
   // Two separate multi-select modes (same split as the Items tab):
   // - "comparing": explicit ⚖️ Compare button, same-kind only, tray runs the report.
   // - "selecting": hold a row, any kind, tray only offers 🚫 Don't import (ignore).
