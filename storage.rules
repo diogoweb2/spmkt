@@ -1,14 +1,20 @@
 rules_version = '2';
 
 // Photo-mode queue: each signed-in user (the shared family account) may
-// read/write only their own photos folder. Photos are small compressed JPEGs
-// uploaded by the app and deleted by scripts/photos/process.mjs (admin SDK,
-// which bypasses these rules).
+// access only their own photos folder. Photos are small compressed JPEGs
+// uploaded by the app, previewed while pending, and deleted either by the
+// user (discard) or by scripts/photos/process.mjs (admin SDK, which bypasses
+// these rules).
+//
+// read/delete must NOT reference request.resource — it only exists on writes,
+// and touching it on a read makes the rule error out (denies the download).
 service firebase.storage {
   match /b/{bucket}/o {
     match /photos/{uid}/{file} {
-      allow read, write: if request.auth != null && request.auth.uid == uid
-                         && (request.resource == null || request.resource.size < 3 * 1024 * 1024);
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+                            && request.resource.size < 3 * 1024 * 1024
+                            && request.resource.contentType.matches('image/.*');
     }
   }
 }
