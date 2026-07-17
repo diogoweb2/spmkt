@@ -9,6 +9,7 @@ import { addToRvList } from '../lib/rvlist'
 import MonthlyChart from '../components/MonthlyChart'
 import UnitToggle from '../components/UnitToggle'
 import PhotoLink from '../components/PhotoLink'
+import FlyerLink from '../components/FlyerLink'
 
 export default function ItemDetail({ db, update, push, pop, view }) {
   const item = db.items.find((i) => i.id === view.itemId)
@@ -85,9 +86,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
             {(() => {
               const fi = flyerInfo(latest)
               return fi && (
-                <span className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 8, fontSize: 11, verticalAlign: 'middle' }}>
-                  {fi.text}
-                </span>
+                <FlyerLink fi={fi} className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 8, fontSize: 11, verticalAlign: 'middle' }} />
               )
             })()}
           </h1>
@@ -157,7 +156,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                     <div className="title">
                       {selected ? '☑️ ' : idx === 0 && byStore.length > 1 ? '🏆 ' : ''}{store.name}
                     </div>
-                    <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? ` · ${flyerInfo(rec).text}` : ''}</div>
+                    <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? <> · <FlyerLink fi={flyerInfo(rec)} /></> : ''}</div>
                   </div>
                   <div className="right title">{fmt(norm)}</div>
                   <span
@@ -233,7 +232,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                   <div className="title small" style={{ fontSize: 14 }}>
                     {store?.name ?? '?'} · {fmtQty(r.qty, r.unit)} ✏️
                   </div>
-                  <div className="sub">{new Date(r.ts).toLocaleDateString()}{flyerInfo(r) ? ` · ${flyerInfo(r).text}` : ''}</div>
+                  <div className="sub">{new Date(r.ts).toLocaleDateString()}{flyerInfo(r) ? <> · <FlyerLink fi={flyerInfo(r)} /></> : ''}</div>
                   {norm != null && (
                     <div className={'hist-bar ' + cls} style={{ width: `${Math.max(6, pct * 100)}%`, marginTop: 6 }} />
                   )}

@@ -7,6 +7,7 @@ import { ignoreItems } from '../lib/ignore'
 import UnitToggle from '../components/UnitToggle'
 import PhotoLink from '../components/PhotoLink'
 import CompareReport from '../components/CompareReport'
+import FlyerLink from '../components/FlyerLink'
 
 export default function Items({ db, update, push }) {
   const [q, setQ] = useState('')
@@ -246,9 +247,7 @@ export default function Items({ db, update, push }) {
                   {(() => {
                     const fi = flyerInfo(recs[0])
                     return fi && (
-                      <span className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 6, fontSize: 11, verticalAlign: 'middle' }}>
-                        {fi.text}
-                      </span>
+                      <FlyerLink fi={fi} className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 6, fontSize: 11, verticalAlign: 'middle' }} />
                     )
                   })()}
                 </div>

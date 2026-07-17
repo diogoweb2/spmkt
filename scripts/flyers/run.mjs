@@ -71,7 +71,9 @@ async function downloadPages(store, dir) {
   }
   if (!files.length) throw new Error(`all ${urls.length} page downloads failed for ${store.url}`)
   log(`${store.name}: downloaded ${files.length}/${urls.length} pages (valid until ${validUntil ? new Date(validUntil).toDateString() : 'unknown'})`)
-  return { files, validUntil }
+  // pageCount = urls.length, not files.length: a failed download skips a file
+  // but the remaining filenames keep their true page numbers.
+  return { files, validUntil, pageCount: urls.length }
 }
 
 // ---------- claude extraction ----------
@@ -82,9 +84,10 @@ const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist) => `Us
 ${imgPaths.join('\n')}
 
 Extract every grocery deal from ALL pages combined. Output ONLY a single JSON array (no prose, no markdown fence). If the same product appears on more than one page, output it once. Each element:
-{"name": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null}
+{"name": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "page": number}
 
 Rules:
+- page: the flyer page the deal appears on = the NN number in the image file's name ("...-pageNN.jpg" -> page NN). If a product appears on several pages, use the first.
 - name: clean generic product name with brand if shown (e.g. "Chicken Drumsticks", "Coca-Cola 12-pack"). No sizes/prices in the name.
 - price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un". A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
 - The item kinds must stay consistent: weight units (kg/g/lb/oz) only when a weight is printed or the price is per weight.
@@ -129,7 +132,7 @@ function kindOf(unit) {
   return Object.keys(UNITS).find((k) => UNITS[k].includes(unit))
 }
 
-async function insertProducts(products, storeName, env, validUntil) {
+async function insertProducts(products, storeName, env, validUntil, flyerUrl, pageCount) {
   const { db, save } = await openFamilyDoc(env)
   if (!db) throw new Error('family db doc not found')
   db.stores ??= []
@@ -185,6 +188,10 @@ async function insertProducts(products, storeName, env, validUntil) {
       ts: Date.now(),
       source: 'flyer',
       validUntil: validUntil ?? null,
+      // The app links the 📰 badge to the flyer site — #p=<page> when the
+      // extraction reported which page the deal was on, plain URL otherwise.
+      flyerUrl: flyerUrl ?? null,
+      flyerPage: Number.isInteger(p.page) && p.page >= 1 && p.page <= pageCount ? p.page : null,
     }
     // Dedupe: flyers are weekly, so at most one flyer record per item+store
     // per week — extraction can vary run to run (names, meat classification),
@@ -246,7 +253,7 @@ for (const store of stores) {
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
     } else {
-      const added = await insertProducts(products, store.name, env, dl.validUntil)
+      const added = await insertProducts(products, store.name, env, dl.validUntil, store.url, dl.pageCount)
       results.push({ name: store.name, added })
     }
   } catch (err) {

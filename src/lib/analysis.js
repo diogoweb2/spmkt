@@ -45,10 +45,13 @@ export function variantLabel(rec) {
 // expired flyer prices stay in the db as reference.
 export function flyerInfo(rec) {
   if (rec?.source !== 'flyer') return null
-  if (!rec.validUntil) return { text: '📰 flyer', valid: true }
+  // Link to the flyer site when the import stored it; #p=N jumps to the page
+  // the deal was found on (fall back to the flyer's first page without it).
+  const url = rec.flyerUrl ? `${rec.flyerUrl}${rec.flyerPage ? `#p=${rec.flyerPage}` : ''}` : null
+  if (!rec.validUntil) return { text: '📰 flyer', valid: true, url }
   const d = new Date(rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const valid = Date.now() <= rec.validUntil
-  return { text: valid ? `📰 flyer until ${d}` : `📰 flyer ended ${d}`, valid }
+  return { text: valid ? `📰 flyer until ${d}` : `📰 flyer ended ${d}`, valid, url }
 }
 
 export function variantRecords(db, itemId, key) {
