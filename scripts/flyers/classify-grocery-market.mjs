@@ -33,9 +33,9 @@ For EACH product below, give typical Toronto supermarket prices SINCE JANUARY 20
 IMPORTANT: grocery prices rose sharply in 2025–2026 — anything you remember from 2025 or earlier is likely too low and must NOT be used. Ground your numbers in CURRENT reality: use the WebSearch tool to check real 2026 Toronto flyer and shelf prices (flyers, RedFlagDeals, SaleWhale, Reddit, store sites); "avg" must match what the product actually costs on the shelf this year, and "excellent" must be a sale price that has actually appeared in a 2026 flyer, not a historical best. For "per unit/package" products, price the typical retail package size the name suggests.
 
 Output ONLY a JSON array (no prose, no markdown fence), one element per product, in the SAME ORDER:
-{"name": "<exact input name>", "market": {"excellent": N, "good": N, "avg": N}}
+{"name": "<exact input \\"name\\" value, without the basis>", "market": {"excellent": N, "good": N, "avg": N}}
 
-Products (name — price basis): ${JSON.stringify(products.map((p) => `${p.name} — ${PER_LABEL[p.per]}`))}`
+Products: ${JSON.stringify(products.map((p) => ({ name: p.name, basis: PER_LABEL[p.per] })))}`
 
 // Researches market thresholds for non-meat items missing them (or all with
 // --all). Returns the number of items updated.
@@ -68,7 +68,9 @@ export async function classifyGroceryMarket(env, { all = false, dryRun = false }
 
     const byName = new Map(chunk.map((i) => [i.name.trim().toLowerCase(), i]))
     for (const r of results) {
-      const item = byName.get(String(r?.name ?? '').trim().toLowerCase())
+      // Tolerate the model echoing the basis back in the name.
+      const key = String(r?.name ?? '').replace(/\s*[—-]\s*per\s.*$/i, '').trim().toLowerCase()
+      const item = byName.get(key)
       const m = r?.market
       if (!item || !m || ![m.excellent, m.good, m.avg].every((n) => typeof n === 'number' && n > 0)) continue
       // Enforce excellent <= good <= avg even if the model slipped.
