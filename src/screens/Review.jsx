@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { unitKind, fmtQty } from '../lib/units'
-import { uid } from '../lib/db'
-import { guessMeatType, GROCERY_TYPE_LABEL } from '../lib/meat'
-import { photoUrl, removePhoto } from '../lib/photos'
+import { fmtQty } from '../lib/units'
+import { GROCERY_TYPE_LABEL } from '../lib/meat'
+import { photoUrl, removePhoto, applyEntry } from '../lib/photos'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
 
@@ -18,46 +17,9 @@ export default function Review({ db, update, push }) {
   const pending = queue.filter((p) => p.status === 'pending')
   const failed = queue.filter((p) => p.status === 'failed')
 
-  // Approve an extracted entry against the draft db: reuse the matched item
-  // or create it, append the record (ts = when the photo was taken,
-  // source 'photo'), drop the queue entry. Runs inside update()'s mutate so
-  // "Approve all" sees items created by earlier entries in the same batch.
-  function applyEntry(d, entry) {
-    const meat = entry.category === 'meat'
-    let item =
-      d.items.find((i) => i.id === entry.matchedItemId) ??
-      d.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
-    if (!item) {
-      item = {
-        id: uid('i'),
-        name: entry.itemName,
-        category: meat ? 'meat' : 'other',
-        kind: unitKind(entry.unit),
-        defaultUnit: entry.unit,
-        annualQty: null,
-        meatType: meat ? guessMeatType(entry.itemName) : null,
-        processing: meat ? (entry.processing ?? 'natural') : null,
-        groceryType: meat ? undefined : entry.groceryType ?? undefined,
-        market: null,
-      }
-      d.items.push(item)
-    }
-    d.records.push({
-      id: uid('r'),
-      itemId: item.id,
-      storeId: entry.storeId,
-      price: entry.price,
-      qty: entry.qty,
-      unit: entry.unit,
-      frozen: meat ? !!entry.frozen : null,
-      bones: meat ? !!entry.bones : null,
-      skin: meat ? !!entry.skin : null,
-      ts: entry.ts,
-      source: 'photo',
-    })
-    d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== entry.id)
-  }
-
+  // Approving uses the shared applyEntry (src/lib/photos.js) — also used by
+  // ⚡ Photo Live — run inside update()'s mutate so "Approve all" sees items
+  // created by earlier entries in the same batch.
   function approve(entry) {
     update((d) => applyEntry(d, entry))
     toast(`Saved ${entry.itemName} — $${entry.price}`)

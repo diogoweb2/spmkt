@@ -9,8 +9,10 @@ import Review from './screens/Review'
 import Settings from './screens/Settings'
 import Snackbar from './components/Snackbar'
 import StoreSheet from './components/StoreSheet'
+import LiveSheet from './components/LiveSheet'
 import { cashbackEnabled } from './lib/cashback'
 import { reviewCount, addPhoto } from './lib/photos'
+import { extractLive, liveEnabled } from './lib/live'
 import { toast } from './lib/toast'
 
 // How long a "Where are you?" confirmation stays fresh — the store sheet
@@ -30,9 +32,13 @@ export default function App() {
   const [stack, setStack] = useState([{ name: 'home' }])
   const [storeSheet, setStoreSheet] = useState(false) // store confirm before an add action
   const [fabMenu, setFabMenu] = useState(false) // ➕ speed-dial open
-  const pendingAction = useRef(null) // 'manual' | 'photo' — chosen action awaiting store confirm
+  const pendingAction = useRef(null) // 'manual' | 'photo' | 'live' — chosen action awaiting store confirm
   const cameraRef = useRef(null)
   const photoStoreRef = useRef(null) // storeId stamped on batch photos
+  const liveCameraRef = useRef(null)
+  const liveStoreRef = useRef(null) // storeId stamped on the live shot
+  // ⚡ Photo Live sheet: null | { status: 'loading'|'ready'|'error', file, storeId, entry?, error? }
+  const [live, setLive] = useState(null)
 
   useEffect(() => watchAuth(setUser), [])
 
@@ -122,11 +128,15 @@ export default function App() {
   const tab = ['item', 'addPrice'].includes(view.name) ? null : view.name
 
   // Run the chosen ➕ action at a confirmed store: manual → AddPrice form;
-  // photo → open the camera (batch capture) stamped with that store.
+  // photo → open the camera (batch capture) stamped with that store;
+  // live → open the camera for one shot, extracted on the spot (§15a).
   const runAction = (action, storeId) => {
     if (action === 'photo') {
       photoStoreRef.current = storeId
       cameraRef.current?.click()
+    } else if (action === 'live') {
+      liveStoreRef.current = storeId
+      liveCameraRef.current?.click()
     } else {
       push({ name: 'addPrice', storeId })
     }
@@ -136,6 +146,10 @@ export default function App() {
   // store and confirmed it within the last hour; then run the action.
   const chooseAction = (action) => {
     setFabMenu(false)
+    if (action === 'live' && !liveEnabled(db)) {
+      toast('⚡ Add your OpenRouter API key in Settings → Import first')
+      return
+    }
     const store = db.stores.find((s) => s.id === db.currentStoreId)
     const confirmedAt = Number(localStorage.getItem(STORE_CONFIRM_KEY) || 0)
     const fresh = Date.now() - confirmedAt < STORE_CONFIRM_MS
@@ -163,6 +177,26 @@ export default function App() {
     }
   }
 
+  // ⚡ Photo Live: extract the single shot right away and open the confirm
+  // sheet. Retry reuses the same file without re-shooting.
+  const runLive = async (file, storeId) => {
+    setLive({ status: 'loading', file, storeId })
+    try {
+      const entry = await extractLive(db, file, storeId)
+      setLive({ status: 'ready', file, storeId, entry })
+      navigator.vibrate?.(15)
+    } catch (err) {
+      console.error('live extraction failed', err)
+      setLive({ status: 'error', file, storeId, error: err.message })
+    }
+  }
+
+  const snapLive = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file && liveStoreRef.current) runLive(file, liveStoreRef.current)
+  }
+
   const addMenu = (
     <div className="fab-menu">
       <button className="fab-action" onClick={() => chooseAction('manual')}>
@@ -170,6 +204,9 @@ export default function App() {
       </button>
       <button className="fab-action" onClick={() => chooseAction('photo')}>
         <span className="mini">📷</span> Photo batch
+      </button>
+      <button className="fab-action" onClick={() => chooseAction('live')}>
+        <span className="mini">⚡</span> Photo live
       </button>
     </div>
   )
@@ -266,6 +303,41 @@ export default function App() {
         hidden
         onChange={snapPhotos}
       />
+
+      {/* hidden single-shot camera input for the ➕ → ⚡ Photo live action */}
+      <input
+        ref={liveCameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={snapLive}
+      />
+
+      {live && (
+        <LiveSheet
+          db={db}
+          update={update}
+          live={live}
+          onClose={() => setLive(null)}
+          onRetry={() => runLive(live.file, live.storeId)}
+          onEdit={(entry) => {
+            // Full-form edit: park the extraction as a ready queue entry and
+            // reuse AddPrice's photo prefill; saving there consumes it. If the
+            // user backs out it stays in Review instead of being lost.
+            update((d) => {
+              d.photoQueue ??= []
+              d.photoQueue.push(entry)
+            })
+            setLive(null)
+            push({ name: 'addPrice', storeId: entry.storeId, photoId: entry.id })
+          }}
+          onSaved={(itemId) => {
+            setLive(null)
+            push({ name: 'item', itemId, fromSave: true })
+          }}
+        />
+      )}
 
       <Snackbar />
     </div>

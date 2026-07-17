@@ -37,6 +37,7 @@ export default function Settings({ db, update, onSignOut }) {
   const [tab, setTab] = useState('stores')
   const [theme, setTheme] = useState(currentTheme())
   const [newStore, setNewStore] = useState(null) // string while the add-store field is open
+  const [orKey, setOrKey] = useState(null) // string while the OpenRouter key field is open
   const [pushMsg, setPushMsg] = useState('')
   const [pushing, setPushing] = useState(false)
 
@@ -279,6 +280,49 @@ export default function Settings({ db, update, onSignOut }) {
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+      )}
+
+      {tab === 'import' && (
+      <div className="card">
+        <h2>Photo Live ⚡</h2>
+        <p className="muted small" style={{ marginBottom: 12 }}>
+          The ➕ → ⚡ Photo live action reads a shelf label instantly with an AI model via
+          OpenRouter. Paste an API key from openrouter.ai (set a spend limit there — each
+          photo costs a fraction of a cent). Stored in your family db, shared across devices.
+        </p>
+        {(db.openrouterKey ?? '').trim() && orKey === null ? (
+          <div className="row" style={{ cursor: 'default' }}>
+            <div className="grow title" style={{ fontSize: 15 }}>✅ API key set</div>
+            <button className="btn small ghost" onClick={() => setOrKey(db.openrouterKey)}>Change</button>
+            <button className="btn small ghost" onClick={() => update((d) => { delete d.openrouterKey })}>
+              Remove
+            </button>
+          </div>
+        ) : orKey === null ? (
+          <button className="btn small ghost" onClick={() => setOrKey('')}>+ Add API key</button>
+        ) : (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="password"
+              autoFocus
+              placeholder="sk-or-v1-…"
+              value={orKey}
+              onChange={(e) => setOrKey(e.target.value)}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button
+              className="btn small"
+              disabled={!orKey.trim()}
+              onClick={() => {
+                update((d) => { d.openrouterKey = orKey.trim() })
+                setOrKey(null)
+              }}
+            >
+              Save
+            </button>
           </div>
         )}
       </div>

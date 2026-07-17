@@ -8,12 +8,14 @@
 import { getStorage, ref, uploadBytes, deleteObject, getDownloadURL } from 'firebase/storage'
 import { app, auth } from './firebase'
 import { uid } from './db'
+import { unitKind } from './units'
+import { guessMeatType } from './meat'
 
 const storage = getStorage(app)
 
 // Downscale + re-encode to a small JPEG (~100-300 KB): plenty for the LLM to
 // read a price label, tiny enough to upload on supermarket wifi.
-async function compress(file, maxDim = 1400, quality = 0.72) {
+export async function compress(file, maxDim = 1400, quality = 0.72) {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height))
   const canvas = document.createElement('canvas')
@@ -52,6 +54,48 @@ export function removePhoto(update, entry) {
   if (entry.status === 'pending' || entry.status === 'failed') {
     deleteObject(ref(storage, entry.path)).catch(() => {})
   }
+}
+
+// Apply an extracted entry (photo batch OR Photo Live) against the draft db:
+// reuse the matched item or create it, append the record (ts = when the photo
+// was taken, source 'photo'), drop the queue entry if it was queued. Must run
+// inside update()'s mutate so a batch sees items created by earlier entries.
+// Returns the item id (so Photo Live can navigate to the product page).
+export function applyEntry(d, entry) {
+  const meat = entry.category === 'meat'
+  let item =
+    d.items.find((i) => i.id === entry.matchedItemId) ??
+    d.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
+  if (!item) {
+    item = {
+      id: uid('i'),
+      name: entry.itemName,
+      category: meat ? 'meat' : 'other',
+      kind: unitKind(entry.unit),
+      defaultUnit: entry.unit,
+      annualQty: null,
+      meatType: meat ? guessMeatType(entry.itemName) : null,
+      processing: meat ? (entry.processing ?? 'natural') : null,
+      market: null,
+      ...(meat ? {} : { groceryType: entry.groceryType ?? 'other' }),
+    }
+    d.items.push(item)
+  }
+  d.records.push({
+    id: uid('r'),
+    itemId: item.id,
+    storeId: entry.storeId,
+    price: entry.price,
+    qty: entry.qty,
+    unit: entry.unit,
+    frozen: meat ? !!entry.frozen : null,
+    bones: meat ? !!entry.bones : null,
+    skin: meat ? !!entry.skin : null,
+    ts: entry.ts,
+    source: 'photo',
+  })
+  d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== entry.id)
+  return item.id
 }
 
 // Entries awaiting the user: extracted and ready to approve, or failed.
