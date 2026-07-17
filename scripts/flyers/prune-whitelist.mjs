@@ -23,16 +23,17 @@ const PROMPT = (rules, names) => `You are cleaning up a family grocery price-tra
 WHITELIST RULES (plain language, may carry exceptions — honor them exactly):
 ${JSON.stringify(rules)}
 
-Rules are interpreted, not string-matched:
-· "Yogurt but only Oikos brand" -> keep Oikos yogurt, remove every other yogurt.
-· "Chips in general but not Pringles" -> keep chips of any brand except Pringles.
-· "Fruits: apples, grapes, ..." -> keep those fruits in any variety (Gala apples, red grapes), remove other produce not covered by another rule.
-If a product plausibly matches ANY rule, keep it. If in doubt, KEEP — deleting is destructive and the user reviews the app weekly anyway.
+Rules are interpreted, not string-matched, and they are STRICT:
+· A product KEEPS only if some rule covers its product category AND the product satisfies every qualifier of that rule.
+· Qualifiers are hard limits, not suggestions: "Yogurt but only Oikos brand" -> Oikos yogurt keeps, EVERY other yogurt (Modhani, Activia, store brand...) is removed. "Bread but only brioche" -> all non-brioche bread removed. "Coconut water but only cans" -> bottled/carton coconut water removed.
+· Enumerations are exhaustive: "Fruits: apples, grapes, oranges, tangerines, berries, bananas" -> those fruits in any variety keep (Gala apples, red grapes); every OTHER fruit or vegetable is removed (melon, pineapple, tomatoes, potatoes...). Do not use botanical pedantry — a tomato does not keep because it is technically a fruit.
+· A product category no rule mentions at all (pasta, rice, ice cream, frozen desserts, cereal, sauces...) is ALWAYS removed. Absence of a rule IS the user saying no. Do not stretch a rule to a neighboring category: ice cream is not "cookies", a frozen dessert is not "frozen waffles", crackers are not "chips".
+Only when a product's identity is genuinely unclear from its name alone (you cannot tell what the product IS) should you keep it.
 
-For EACH product below, decide: keep (matches at least one rule) or remove (matches none).
+For EACH product below, decide: keep (a specific rule covers it, all qualifiers satisfied) or remove.
 
 Output ONLY a JSON array (no prose, no markdown fence), one element per product, SAME ORDER, using the EXACT input name:
-{"name": "<exact input name>", "keep": true|false, "why": "<short reason>"}
+{"name": "<exact input name>", "keep": true|false, "why": "<keep: which rule and why its qualifiers are satisfied | remove: short reason>"}
 
 Products: ${JSON.stringify(names)}`
 
