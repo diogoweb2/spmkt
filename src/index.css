@@ -591,7 +591,7 @@ html[data-theme='dark'] .skeleton::after {
     display: flex; flex-direction: column; align-items: center; gap: 8px;
     position: sticky; top: 0; height: 100dvh; width: 92px; flex-shrink: 0;
     background: var(--md-surface-container); padding: 18px 0;
-    z-index: 10;
+    z-index: 12;
   }
   .rail-fab-wrap { position: relative; margin-bottom: 14px; }
   .rail .rail-fab {

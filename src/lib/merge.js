@@ -86,4 +86,28 @@ export function mergeItems(db, itemIds, name) {
   db.items = db.items
     .filter((i) => i.id === survivor.id || !itemIds.includes(i.id))
     .map((i) => (i.id === survivor.id ? survivor : i))
+
+  dropDuplicateFlyerRecords(db, survivor.id)
+}
+
+// Flyer imports dedupe per item+store, so the same real-world flyer deal can
+// land on two records if it was matched to different (not-yet-merged) items
+// during import. Once merged onto one item, collapse records that share a
+// store, flyer window (`validUntil`) and variant, keeping the most recently
+// imported one. Manual/photo records are untouched — they're append-only.
+function dropDuplicateFlyerRecords(db, survivorId) {
+  const groups = new Map()
+  for (const r of db.records) {
+    if (r.itemId !== survivorId || r.source !== 'flyer') continue
+    const key = [r.storeId, r.validUntil ?? '', r.frozen, r.bones, r.skin].join('|')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(r)
+  }
+  const toDrop = new Set()
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    const keep = group.reduce((a, b) => (b.ts > a.ts ? b : a))
+    for (const r of group) if (r !== keep) toDrop.add(r.id)
+  }
+  if (toDrop.size) db.records = db.records.filter((r) => !toDrop.has(r.id))
 }
