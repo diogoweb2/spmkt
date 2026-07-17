@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
   variantKey, variantLabel, flyerInfo, isComparable,
@@ -17,6 +17,11 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const [pickedVariant, setPickedVariant] = useState(view.variant ?? null)
   const [compareSel, setCompareSel] = useState([])
   const [rvState, setRvState] = useState({})
+  // Persisted ✓ markers from Home's sends (and ours below) — see db.rvSent rules.
+  const rvSent = useMemo(
+    () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
+    [db.rvSent],
+  )
   if (!item) return null
 
   const allRecs = itemRecords(db, item.id)
@@ -67,7 +72,16 @@ export default function ItemDetail({ db, update, push, pop, view }) {
         priceLabel: fmtDisplay(norm, item.kind, wu),
         validUntil: rec.validUntil ?? undefined,
       })
-      setRvState((s) => ({ ...s, [store.id]: 'ok' }))
+      setRvState((s) => ({ ...s, [store.id]: undefined }))
+      update((next) => {
+        // Same pruning as Home: drop markers whose record expired or is gone.
+        const now = Date.now()
+        next.rvSent = (next.rvSent ?? []).filter((s) => {
+          const r = next.records.find((r) => r.id === s.recId)
+          return r && (r.validUntil == null || r.validUntil >= now)
+        })
+        next.rvSent.push({ itemId: item.id, recId: rec.id, ts: now })
+      })
       navigator.vibrate?.(15)
     } catch (e) {
       console.error('addToRvList failed', e)
@@ -145,6 +159,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
           <div className="list">
             {byStore.map(({ store, rec, norm }, idx) => {
               const selected = compareSel.includes(store.id)
+              const sent = rvState[store.id] ?? (rvSent.has(`${item.id}|${rec.id}`) ? 'ok' : undefined)
               return (
                 <button
                   key={store.id}
@@ -162,14 +177,14 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                   <span
                     role="button"
                     aria-label="Add to RV Groceries list"
-                    className={`rv-add${rvState[store.id] ? ' on' : ''}`}
+                    className={`rv-add${sent ? ' on' : ''}`}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (!rvState[store.id]) sendToRv(store, rec, norm)
+                      if (!sent) sendToRv(store, rec, norm)
                     }}
                   >
-                    {{ pending: '…', ok: '✓', err: '!' }[rvState[store.id]] ?? '+'}
+                    {{ pending: '…', ok: '✓', err: '!' }[sent] ?? '+'}
                   </span>
                 </button>
               )
