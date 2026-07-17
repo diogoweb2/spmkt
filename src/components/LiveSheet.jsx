@@ -23,6 +23,7 @@ export default function LiveSheet({ db, update, live, onClose, onRetry, onEdit, 
             <h2 style={{ marginBottom: 4 }}>Reading the label…</h2>
             <p className="muted small">A couple of seconds.</p>
             <div className="skeleton" style={{ height: 12, borderRadius: 999, marginTop: 16 }} />
+            <button className="btn ghost" style={{ marginTop: 16 }} onClick={onClose}>Cancel</button>
           </div>
         )}
         {live.status === 'error' && <ErrorBody live={live} update={update} onClose={onClose} onRetry={onRetry} />}

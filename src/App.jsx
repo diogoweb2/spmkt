@@ -39,6 +39,7 @@ export default function App() {
   const liveStoreRef = useRef(null) // storeId stamped on the live shot
   // ⚡ Photo Live sheet: null | { status: 'loading'|'ready'|'error', file, storeId, entry?, error? }
   const [live, setLive] = useState(null)
+  const liveRun = useRef(0) // bumped on cancel so a stale extraction can't reopen the sheet
 
   useEffect(() => watchAuth(setUser), [])
 
@@ -180,15 +181,23 @@ export default function App() {
   // ⚡ Photo Live: extract the single shot right away and open the confirm
   // sheet. Retry reuses the same file without re-shooting.
   const runLive = async (file, storeId) => {
+    const run = ++liveRun.current
     setLive({ status: 'loading', file, storeId })
     try {
       const entry = await extractLive(db, file, storeId)
+      if (liveRun.current !== run) return // cancelled while reading
       setLive({ status: 'ready', file, storeId, entry })
       navigator.vibrate?.(15)
     } catch (err) {
+      if (liveRun.current !== run) return
       console.error('live extraction failed', err)
       setLive({ status: 'error', file, storeId, error: err.message })
     }
+  }
+
+  const closeLive = () => {
+    liveRun.current++
+    setLive(null)
   }
 
   const snapLive = (e) => {
@@ -319,7 +328,7 @@ export default function App() {
           db={db}
           update={update}
           live={live}
-          onClose={() => setLive(null)}
+          onClose={closeLive}
           onRetry={() => runLive(live.file, live.storeId)}
           onEdit={(entry) => {
             // Full-form edit: park the extraction as a ready queue entry and
