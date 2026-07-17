@@ -70,6 +70,13 @@ export default function AddPrice({ db, update, push, pop, view }) {
   const [frozen, setFrozen] = useState(photoEntry?.frozen ?? startRec?.frozen ?? false)
   const [bones, setBones] = useState(photoEntry?.bones ?? startRec?.bones ?? false)
   const [skin, setSkin] = useState(photoEntry?.skin ?? startRec?.skin ?? false)
+  // Optional "until <date>" — a limited-time price (in-store sale/tag) the user
+  // types manually. Behaves exactly like a flyer deal: expires on that date and
+  // shows the 📰 badge. Stored as a yyyy-mm-dd string in the date input.
+  const [until, setUntil] = useState(() => {
+    const v = editRec?.validUntil
+    return v ? new Date(v).toISOString().slice(0, 10) : ''
+  })
   // "You paid a different price here before" dialog: null | {prevRec}
   const [priceChoice, setPriceChoice] = useState(null)
   const cameraRef = useRef(null)
@@ -108,6 +115,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
     setFrozen(last?.frozen ?? false)
     setBones(last?.bones ?? false)
     setSkin(last?.skin ?? false)
+    setUntil(here?.validUntil ? new Date(here.validUntil).toISOString().slice(0, 10) : '')
   }
 
   function startCreate() {
@@ -116,6 +124,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
     setUnit(store?.defaultUnit ?? 'lb')
     setQty('1')
     setPrice('')
+    setUntil('')
   }
 
   const formVisible = item || creating
@@ -130,6 +139,9 @@ export default function AddPrice({ db, update, push, pop, view }) {
   const valid = formVisible && effPrice > 0 && qtyNum > 0 && (item || query.trim())
   const cbRate = cashbackRate(db, store)
   const finalPrice = pkg ? Math.round(effPrice * 100) / 100 : priceNum
+  // Parse the optional "until" date to end-of-day epoch ms (local), so the
+  // price stays valid through the whole of that day. Empty → no expiry.
+  const validUntil = until ? new Date(`${until}T23:59:59`).getTime() : null
 
   const prevHere = item && !editRec ? lastAtStore(item.id) : null
   // Store mode is a shelf-tag match ("is the price still the same?"), so the
@@ -155,6 +167,9 @@ export default function AddPrice({ db, update, push, pop, view }) {
         bones: meat ? bones : null,
         skin: meat ? skin : null,
         ts: photoEntry?.ts ?? Date.now(),
+        // A user-typed "until <date>" makes this a limited-time price that
+        // expires and shows the 📰 badge — same handling as a flyer deal.
+        ...(validUntil ? { source: 'flyer', validUntil } : {}),
       })
       if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
     })
@@ -172,6 +187,8 @@ export default function AddPrice({ db, update, push, pop, view }) {
       rec.frozen = meat ? frozen : null
       rec.bones = meat ? bones : null
       rec.skin = meat ? skin : null
+      if (validUntil) { rec.source = 'flyer'; rec.validUntil = validUntil }
+      else if (rec.source === 'flyer' && !rec.flyerUrl) { delete rec.source; delete rec.validUntil }
       if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
     })
     toast('Price corrected — history unchanged')
@@ -195,6 +212,11 @@ export default function AddPrice({ db, update, push, pop, view }) {
         rec.frozen = meat ? frozen : null
         rec.bones = meat ? bones : null
         rec.skin = meat ? skin : null
+        // Manual "until" edit: set/clear the expiry window. Don't strip a real
+        // flyer import's source (it keeps its url/page); only clear the window
+        // for records that were manual "until" prices to begin with.
+        if (validUntil) { rec.source = 'flyer'; rec.validUntil = validUntil }
+        else if (rec.source === 'flyer' && !rec.flyerUrl) { delete rec.source; delete rec.validUntil }
       })
       pop()
       return
@@ -205,7 +227,8 @@ export default function AddPrice({ db, update, push, pop, view }) {
     // Store mode: the item already has a price at this store.
     if (prevHere && item) {
       const same =
-        prevHere.price === finalPrice && prevHere.qty === qtyNum && prevHere.unit === unit
+        prevHere.price === finalPrice && prevHere.qty === qtyNum && prevHere.unit === unit &&
+        (prevHere.validUntil ?? null) === validUntil
       if (same) {
         toast('Same price as last time — nothing new to save 👍')
         push({ name: 'item', itemId: item.id })
@@ -517,6 +540,25 @@ export default function AddPrice({ db, update, push, pop, view }) {
               </div>
             </>
           )}
+
+          <label className="field">
+            <span className="lbl">Sale until <span className="muted">(optional)</span></span>
+            <input
+              type="date"
+              value={until}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setUntil(e.target.value)}
+            />
+            {until ? (
+              <span className="muted small" style={{ marginTop: 4 }}>
+                📰 Limited-time price — expires after {new Date(`${until}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, like a flyer deal.
+              </span>
+            ) : (
+              <span className="muted small" style={{ marginTop: 4 }}>
+                Set a date for a temporary in-store sale; leave empty for a regular price.
+              </span>
+            )}
+          </label>
 
           <button className="btn" disabled={!valid} onClick={save} style={{ marginTop: 8 }}>
             {editRec ? 'Save changes' : prevHere ? 'Save price at ' + store.name : 'Save price'}
