@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay } from '../lib/units'
-import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
+import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GROCERY_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import { ignoreItems } from '../lib/ignore'
 import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
@@ -21,7 +21,8 @@ function untilUrgency(ts) {
 // processed items get their own "<Type> · ultra-processed" section after the
 // natural one, with rating/type/processing filters (rating default:
 // excellent + good). 🛒 Groceries mode is one flat list of non-meat deals
-// with only the store filter and $/A–Z sort. Expired flyer prices never show.
+// with category (supermarket section) + store filters and $/A–Z sort.
+// Expired flyer prices never show.
 // Two multi-select modes: ⚖️ Compare button (same-kind only) vs hold-to-
 // select any row (🚫 Don't import — delete & ignore, no kind restriction).
 // Store picking lives in the Location tab.
@@ -37,6 +38,7 @@ export default function Home({ db, update, push }) {
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
   const [storesOff, setStoresOff] = useState(() => new Set())
   const [typesOff, setTypesOff] = useState(() => new Set())
+  const [catsOff, setCatsOff] = useState(() => new Set()) // grocery category filter
   const [proc, setProc] = useState('all') // cycles all -> natural -> ultra
   const [sort, setSort] = useState('price') // 'price' | 'deal' | 'name'
   // Two separate multi-select modes (same split as the Items tab):
@@ -102,12 +104,16 @@ export default function Home({ db, update, push }) {
   }
 
   // Items with no market data (rating null) always pass the rating filter.
-  // Grocery mode only filters by store (its items carry no rating/processing).
+  // Grocery mode filters by store and category (no rating/processing there).
   const show = (d) =>
     !storesOff.has(d.store.id) &&
-    (!meat ||
-      ((proc === 'all' || (proc === 'ultra') === d.ultra) &&
-        (d.rating == null || ratingsOn.has(d.rating))))
+    (meat
+      ? (proc === 'all' || (proc === 'ultra') === d.ultra) &&
+        (d.rating == null || ratingsOn.has(d.rating))
+      : !catsOff.has(d.gtype))
+
+  // Category chips only for sections that currently have grocery deals.
+  const groceryCats = meat ? [] : GROCERY_TYPES.filter((t) => grocery.some((d) => d.gtype === t))
 
   // 'deal' = biggest discount vs the item's market avg price; no-market last.
   const dealScore = (d) => (d.item.market ? d.norm / d.item.market.avg : Infinity)
@@ -283,6 +289,31 @@ export default function Home({ db, update, push }) {
               onClick={() => toggle(typesOff, setTypesOff, t)}
             >
               {MEAT_TYPE_LABEL[t]}
+            </button>
+          ))}
+        </Chips>
+      )}
+      {!meat && groceryCats.length > 1 && (
+        <Chips style={{ marginBottom: 8 }}>
+          <button
+            aria-label="Clear category selection"
+            onClick={() => setCatsOff(new Set(GROCERY_TYPES))}
+          >
+            ✕
+          </button>
+          <button
+            aria-label="Select all categories"
+            onClick={() => setCatsOff(new Set())}
+          >
+            All
+          </button>
+          {groceryCats.map((t) => (
+            <button
+              key={t}
+              className={catsOff.has(t) ? '' : 'on'}
+              onClick={() => toggle(catsOff, setCatsOff, t)}
+            >
+              {GROCERY_TYPE_LABEL[t]}
             </button>
           ))}
         </Chips>

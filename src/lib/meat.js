@@ -19,6 +19,23 @@ export const MEAT_TYPE_LABEL = {
 
 export const PROCESSING_LABEL = { natural: 'Natural', ultra: 'Ultra-processed' }
 
+// Supermarket sections for non-meat items (`groceryType`, labeled by
+// scripts/flyers/classify-grocery.mjs — keep the lists in sync). Unlabeled
+// items file under "other" until the pass runs.
+export const GROCERY_TYPES = ['produce', 'dairy', 'bakery', 'frozen', 'pantry', 'snacks', 'beverages', 'household', 'other']
+
+export const GROCERY_TYPE_LABEL = {
+  produce: '🥬 Produce',
+  dairy: '🥛 Dairy & Eggs',
+  bakery: '🍞 Bakery',
+  frozen: '🧊 Frozen',
+  pantry: '🥫 Pantry',
+  snacks: '🍿 Snacks',
+  beverages: '🥤 Beverages',
+  household: '🧻 Household',
+  other: '🛒 Other',
+}
+
 // Instant keyword-based meat-type guess for items the weekly LLM pass hasn't
 // classified yet (manual items land on Home right away instead of under
 // "Other meat"). The LLM pass later writes the authoritative `meatType`.
@@ -117,15 +134,17 @@ export function meatDeals(db) {
 }
 
 // Current best deal per non-meat item, cheapest first — Home's 🛒 Groceries
-// view. Non-meat items have no classification: rating stays null (no market
-// data) and there are no meat-type/processing groupings.
+// view. Non-meat items have no market data (rating stays null) but carry a
+// `groceryType` supermarket section (classify-grocery.mjs) used as a filter;
+// unlabeled items count as "other".
 export function groceryDeals(db) {
   const now = Date.now()
   const out = []
   for (const item of db.items) {
     if (item.category === 'meat') continue
+    const gtype = GROCERY_TYPES.includes(item.groceryType) ? item.groceryType : 'other'
     for (const best of bestDeals(db, item, now)) {
-      out.push({ ...best, rating: best.byPiece ? null : dealRating(item, best.norm), ultra: false })
+      out.push({ ...best, gtype, rating: best.byPiece ? null : dealRating(item, best.norm), ultra: false })
     }
   }
   out.sort((a, b) => a.norm - b.norm)

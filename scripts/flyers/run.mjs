@@ -22,6 +22,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray, sendPush } from './shared.mjs'
 import { classifyMeat } from './classify-meat.mjs'
+import { classifyGrocery } from './classify-grocery.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -277,6 +278,15 @@ if (!DRY_RUN) {
     classifyFailed = true
     console.error(`[classify-meat] FAILED: ${err.message}`)
   }
+  // ...and label new non-meat items with their supermarket section
+  // (groceryType) for Home's Groceries category filter.
+  try {
+    await classifyGrocery(env)
+  } catch (err) {
+    failed = true
+    classifyFailed = true
+    console.error(`[classify-grocery] FAILED: ${err.message}`)
+  }
 }
 
 // Notify every registered device with a summary of this run.
@@ -289,7 +299,7 @@ if (!DRY_RUN) {
     const title = failed ? '⚠️ Flyer sync finished with errors' : '✅ Flyer sync done'
     const parts = [`${totalAdded} new deal${totalAdded === 1 ? '' : 's'} from ${imported.length} store${imported.length === 1 ? '' : 's'}.`]
     if (errored.length) parts.push(`Failed: ${errored.map((r) => r.name).join(', ')}.`)
-    if (classifyFailed) parts.push('Meat classification failed.')
+    if (classifyFailed) parts.push('Classification failed.')
     if (skipped.length) parts.push(`${skipped.length} already up to date.`)
     await sendPush(env, { title, body: parts.join(' ') })
   } catch (err) {
