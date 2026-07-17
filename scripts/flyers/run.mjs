@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url'
 import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray, sendPush } from './shared.mjs'
 import { classifyMeat } from './classify-meat.mjs'
 import { classifyGrocery } from './classify-grocery.mjs'
+import { classifyGroceryMarket } from './classify-grocery-market.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -286,6 +287,15 @@ if (!DRY_RUN) {
     failed = true
     classifyFailed = true
     console.error(`[classify-grocery] FAILED: ${err.message}`)
+  }
+  // ...and research market thresholds for non-meat items that have none yet,
+  // so grocery deals get excellent/good/average/bad ratings like meat.
+  try {
+    await classifyGroceryMarket(env)
+  } catch (err) {
+    failed = true
+    classifyFailed = true
+    console.error(`[classify-grocery-market] FAILED: ${err.message}`)
   }
 }
 

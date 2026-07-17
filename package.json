@@ -11,6 +11,8 @@
     "classify:new": "node scripts/flyers/classify-meat.mjs --new",
     "classify:grocery": "node scripts/flyers/classify-grocery.mjs",
     "classify:grocery:dry": "node scripts/flyers/classify-grocery.mjs --dry-run",
+    "classify:market": "node scripts/flyers/classify-grocery-market.mjs",
+    "classify:market:dry": "node scripts/flyers/classify-grocery-market.mjs --dry-run",
     "flyers": "node scripts/flyers/run.mjs",
     "flyers:force": "node scripts/flyers/run.mjs --force",
     "flyers:dry": "node scripts/flyers/run.mjs --dry-run",

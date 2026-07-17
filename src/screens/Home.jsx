@@ -21,7 +21,8 @@ function untilUrgency(ts) {
 // processed items get their own "<Type> · ultra-processed" section after the
 // natural one, with rating/type/processing filters (rating default:
 // excellent + good). 🛒 Groceries mode is one flat list of non-meat deals
-// with category (supermarket section) + store filters and $/A–Z sort.
+// with the same rating filter plus category (supermarket section) + store
+// filters; both modes share the $/🔥/A–Z sort.
 // Expired flyer prices never show.
 // Two multi-select modes: ⚖️ Compare button (same-kind only) vs hold-to-
 // select any row (🚫 Don't import — delete & ignore, no kind restriction).
@@ -31,8 +32,8 @@ const RATING_KEYS = Object.keys(RATING)
 export default function Home({ db, update, push }) {
   const groups = useMemo(() => meatDeals(db), [db])
   const grocery = useMemo(() => groceryDeals(db), [db])
-  // '🥩 meat' (classified deals) vs '🛒 grocery' (everything else; no meat-type,
-  // rating or processing filters — non-meat items have no market data).
+  // '🥩 meat' (classified deals) vs '🛒 grocery' (everything else; category
+  // chips instead of meat-type chips, no processing filter).
   const [mode, setMode] = useState('meat')
   const meat = mode === 'meat'
   const [ratingsOn, setRatingsOn] = useState(() => new Set(['excellent', 'good']))
@@ -103,13 +104,14 @@ export default function Home({ db, update, push }) {
     setSet(next)
   }
 
-  // Items with no market data (rating null) always pass the rating filter.
-  // Grocery mode filters by store and category (no rating/processing there).
+  // Items with no market data (rating null) always pass the rating filter,
+  // which applies in both modes. Grocery mode adds the category filter; only
+  // meat has the processing filter.
   const show = (d) =>
     !storesOff.has(d.store.id) &&
+    (d.rating == null || ratingsOn.has(d.rating)) &&
     (meat
-      ? (proc === 'all' || (proc === 'ultra') === d.ultra) &&
-        (d.rating == null || ratingsOn.has(d.rating))
+      ? proc === 'all' || (proc === 'ultra') === d.ultra
       : !catsOff.has(d.gtype))
 
   // Category chips only for sections that currently have grocery deals.
@@ -199,11 +201,6 @@ export default function Home({ db, update, push }) {
     exitSelect()
   }
 
-  function switchMode(m) {
-    setMode(m)
-    if (m !== 'meat' && sort === 'deal') setSort('price') // no market data → no 🔥 sort
-  }
-
   if (report && compareRows.length >= 2) {
     return (
       <CompareReport
@@ -250,24 +247,22 @@ export default function Home({ db, update, push }) {
 
       {!comparing && !selecting && (
         <Chips style={{ marginBottom: 8 }}>
-          <button className={meat ? 'on' : ''} onClick={() => switchMode('meat')}>🥩 Meat</button>
-          <button className={meat ? '' : 'on'} onClick={() => switchMode('grocery')}>🛒 Groceries</button>
+          <button className={meat ? 'on' : ''} onClick={() => setMode('meat')}>🥩 Meat</button>
+          <button className={meat ? '' : 'on'} onClick={() => setMode('grocery')}>🛒 Groceries</button>
         </Chips>
       )}
 
-      {meat && (
-        <Chips style={{ marginBottom: 8 }}>
-          {RATING_KEYS.map((r) => (
+      <Chips style={{ marginBottom: 8 }}>
+        {RATING_KEYS.map((r) => (
             <button
-              key={r}
-              className={ratingsOn.has(r) ? 'on' : ''}
-              onClick={() => toggle(ratingsOn, setRatingsOn, r)}
-            >
-              {RATING[r].label.replace(' deal', '')}
-            </button>
-          ))}
-        </Chips>
-      )}
+            key={r}
+            className={ratingsOn.has(r) ? 'on' : ''}
+            onClick={() => toggle(ratingsOn, setRatingsOn, r)}
+          >
+            {RATING[r].label.replace(' deal', '')}
+          </button>
+        ))}
+      </Chips>
       {meat && (
         <Chips style={{ marginBottom: 8 }}>
           <button
@@ -346,7 +341,7 @@ export default function Home({ db, update, push }) {
 
       <Chips style={{ marginBottom: 8 }}>
         <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)', flex: '0 0 auto' }}>Sort</span>
-        {[['price', '$ Cheapest'], ...(meat ? [['deal', '🔥 Best deal']] : []), ['name', 'A–Z']].map(([k, label]) => (
+        {[['price', '$ Cheapest'], ['deal', '🔥 Best deal'], ['name', 'A–Z']].map(([k, label]) => (
           <button key={k} className={sort === k ? 'on' : ''} onClick={() => setSort(k)}>
             {label}
           </button>

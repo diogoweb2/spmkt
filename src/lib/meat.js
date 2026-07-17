@@ -59,15 +59,20 @@ export const RATING = {
   bad: { label: '❌ Bad deal', cls: 'lvl-high' },
 }
 
-// Rates a normalized price (per 100 g) against the item's LLM-researched
-// Toronto market thresholds ($/lb). null when the item has no market data yet.
+// Rates a normalized price (per 100 g / 100 ml / unit) against the item's
+// LLM-researched Toronto market thresholds — $/lb for weight items (meat via
+// classify-meat.mjs, groceries via classify-grocery-market.mjs), $/L for
+// volume, $/unit for count. null when the item has no market data yet.
 export function dealRating(item, norm) {
   const m = item.market
   if (!m || norm == null) return null
-  const perLb = norm * (UNITS.lb.toBase / 100)
-  if (perLb <= m.excellent) return 'excellent'
-  if (perLb <= m.good) return 'good'
-  if (perLb <= m.avg) return 'average'
+  const per =
+    item.kind === 'volume' ? norm * 10
+    : item.kind === 'count' ? norm
+    : norm * (UNITS.lb.toBase / 100)
+  if (per <= m.excellent) return 'excellent'
+  if (per <= m.good) return 'good'
+  if (per <= m.avg) return 'average'
   return 'bad'
 }
 
@@ -134,9 +139,10 @@ export function meatDeals(db) {
 }
 
 // Current best deal per non-meat item, cheapest first — Home's 🛒 Groceries
-// view. Non-meat items have no market data (rating stays null) but carry a
-// `groceryType` supermarket section (classify-grocery.mjs) used as a filter;
-// unlabeled items count as "other".
+// view. Items carry a `groceryType` supermarket section (classify-grocery.mjs)
+// used as a filter, and `market` thresholds (classify-grocery-market.mjs) that
+// rate deals just like meat; rating stays null until researched. Unlabeled
+// items count as "other".
 export function groceryDeals(db) {
   const now = Date.now()
   const out = []
