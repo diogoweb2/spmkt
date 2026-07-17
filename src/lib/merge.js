@@ -73,6 +73,10 @@ export function mergeItems(db, itemIds, name) {
 
   for (const r of db.records) {
     if (!itemIds.includes(r.itemId)) continue
+    // Keep the name the record was logged under — merges rename items, and the
+    // original (store-specific) name is what you look for on the shelf.
+    const from = items.find((i) => i.id === r.itemId)
+    if (!r.origName && from && from.name !== name) r.origName = from.name
     r.itemId = survivor.id
     if (target && r.unit !== target && unitKind(r.unit) === survivor.kind) {
       r.qty = convertQty(r.qty, r.unit, target)

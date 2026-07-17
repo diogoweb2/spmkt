@@ -86,11 +86,12 @@ const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist) => `Us
 ${imgPaths.join('\n')}
 
 Extract every grocery deal from ALL pages combined. Output ONLY a single JSON array (no prose, no markdown fence). If the same product appears on more than one page, output it once. Each element:
-{"name": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "page": number}
+{"name": string, "origName": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "page": number}
 
 Rules:
 - page: the flyer page the deal appears on = the NN number in the image file's name ("...-pageNN.jpg" -> page NN). If a product appears on several pages, use the first.
 - name: clean generic product name with brand if shown (e.g. "Chicken Drumsticks", "Coca-Cola 12-pack"). No sizes/prices in the name.
+- origName: the product name exactly as printed on the flyer (brand, variety, wording — still no sizes/prices). This is what the user reads on the shelf, so keep it faithful even when "name" is a generic/db name that groups it with similar products.
 - price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un". A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
 - The item kinds must stay consistent: weight units (kg/g/lb/oz) only when a weight is printed or the price is per weight.
 - Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. If a multi-product deal shows a different size per product, use each product's own size.
@@ -100,7 +101,7 @@ Rules:
 - Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip anything that is not a grocery product you'd buy to eat or use in the kitchen/home: store banners, event ads, store hours, loyalty-points promos with no concrete product price, toys, clothing, electronics, kitchenware, pet food, garden. If the page turns out to be a pure advertisement with no priced groceries, return an empty array [].
 - If a price is unreadable, skip that product.${existingNames.length ? `
-- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation: ${JSON.stringify(existingNames)}` : ''}${ignoredNames.length ? `
+- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation; origName still keeps the flyer's own wording: ${JSON.stringify(existingNames)}` : ''}${ignoredNames.length ? `
 - IGNORED PRODUCTS — the user deleted these and never wants to see them again: ${JSON.stringify(ignoredNames)}
   Each name is an EXAMPLE of a product type, not a string to match on. Work out what the product actually IS — its generic type, dropping the brand, the size and any qualifier — then omit every flyer product of that type, whatever its brand or variety.
   · "Royale Bathroom Tissue" -> the type is bathroom tissue: omit all bathroom tissue, any brand.
@@ -188,6 +189,12 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
       bones: isMeat ? !!p.bones : null,
       skin: isMeat ? !!p.skin : null,
       ts: Date.now(),
+      // Flyer's literal product name, kept only when it differs from the item
+      // name (which may be a generic/db name grouping similar products).
+      origName:
+        typeof p.origName === 'string' && p.origName.trim() && p.origName.trim().toLowerCase() !== item.name.trim().toLowerCase()
+          ? p.origName.trim()
+          : null,
       source: 'flyer',
       validUntil: validUntil ?? null,
       // The app links the 📰 badge to the flyer site — #p=<page> when the

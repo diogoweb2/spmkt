@@ -232,6 +232,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                   <div className="title small" style={{ fontSize: 14 }}>
                     {store?.name ?? '?'} · {fmtQty(r.qty, r.unit)} ✏️
                   </div>
+                  {r.origName && <div className="sub" style={{ fontStyle: 'italic' }}>“{r.origName}”</div>}
                   <div className="sub">{new Date(r.ts).toLocaleDateString()}{flyerInfo(r) ? <> · <FlyerLink fi={flyerInfo(r)} /></> : ''}</div>
                   {norm != null && (
                     <div className={'hist-bar ' + cls} style={{ width: `${Math.max(6, pct * 100)}%`, marginTop: 6 }} />
