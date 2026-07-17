@@ -132,10 +132,14 @@ export default function AddPrice({ db, update, push, pop, view }) {
   const finalPrice = pkg ? Math.round(effPrice * 100) / 100 : priceNum
 
   const prevHere = item && !editRec ? lastAtStore(item.id) : null
-  const prevHereNorm = prevHere && item ? recordNorm(prevHere, item, db) : null
+  // Store mode is a shelf-tag match ("is the price still the same?"), so the
+  // "here" figures show the raw shelf price — card cashback is ignored here
+  // (it's baked in elsewhere, and shown live in the caption below the input).
+  const prevHereNorm = prevHere && item ? recordNorm(prevHere, item) : null
   const cheapestElsewhere = item
     ? pricesByStore(db, item.id, null).find((e) => e.store.id !== store?.id)
     : null
+  const cheapestElsewhereNorm = cheapestElsewhere ? recordNorm(cheapestElsewhere.rec, item) : null
 
   // Append a brand-new record (the normal path, and "it's a new price").
   function appendRecord(itemId, meat) {
@@ -309,7 +313,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
       {!formVisible && (
         <div className="suggestions list">
           {matches.map(({ i: it, here }) => {
-            const hereNorm = here ? recordNorm(here, it, db) : null
+            const hereNorm = here ? recordNorm(here, it) : null
             return (
               <button key={it.id} className="row" onClick={() => selectItem(it)}>
                 <div className="grow">
@@ -356,7 +360,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
               </div>
               {cheapestElsewhere && (
                 <div className="small muted" style={{ marginTop: 3 }}>
-                  cheapest elsewhere: {fmtDisplay(cheapestElsewhere.norm, item.kind, wu)} at {cheapestElsewhere.store.name}
+                  cheapest elsewhere: {fmtDisplay(cheapestElsewhereNorm, item.kind, wu)} at {cheapestElsewhere.store.name}
                 </div>
               )}
               <div className="small muted" style={{ marginTop: 3 }}>
