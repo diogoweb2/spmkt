@@ -21,8 +21,8 @@ function untilUrgency(ts) {
 // Home = current deals. 🥩 Meat mode groups Beef/Pork/Chicken/Fish; ultra-
 // processed items get their own "<Type> · ultra-processed" section after the
 // natural one, with rating/type/processing filters (rating default:
-// excellent + good). 🛒 Groceries mode is one flat list of non-meat deals
-// with the same rating filter plus category (supermarket section) + store
+// excellent + good). 🛒 Groceries mode groups non-meat deals by category
+// (supermarket section) with the same rating filter plus category + store
 // filters; both modes share the $/🔥/A–Z sort.
 // Expired flyer prices never show unless the ⏰ Expired toggle is on
 // (rows then show "ended <date>"). 🔍 in the topbar opens a name search.
@@ -140,7 +140,7 @@ export default function Home({ db, update, push }) {
 
   // One section per meat type for natural items, followed by a separate
   // "<Type> · ultra-processed" section when the type has ultra items.
-  // Grocery mode is one flat, unlabeled section.
+  // Grocery mode: one labeled section per category, in GROCERY_TYPES order.
   const sections = meat
     ? MEAT_TYPES.flatMap((t) => {
         if (typesOff.has(t)) return []
@@ -152,10 +152,10 @@ export default function Home({ db, update, push }) {
         if (ultra.length) out.push({ key: `${t}-ultra`, label: `${MEAT_TYPE_LABEL[t]} · ultra-processed`, list: ultra })
         return out
       })
-    : (() => {
-        const list = grocery.filter(show).sort(cmp)
-        return list.length ? [{ key: 'grocery', label: null, list }] : []
-      })()
+    : GROCERY_TYPES.flatMap((t) => {
+        const list = grocery.filter((d) => d.gtype === t && show(d)).sort(cmp)
+        return list.length ? [{ key: t, label: GROCERY_TYPE_LABEL[t], list }] : []
+      })
 
   // Selection is per item; an item can have two rows (normal + by-piece),
   // so dedupe by item id — trays and CompareReport want one entry per item.
