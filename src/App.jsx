@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { watchAuth, signOutUser } from './lib/firebase'
 import { ensureDB, subscribeDB, saveDB } from './lib/db'
 import SignInScreen from './screens/SignInScreen'
@@ -10,18 +10,29 @@ import Settings from './screens/Settings'
 import Snackbar from './components/Snackbar'
 import StoreSheet from './components/StoreSheet'
 import { cashbackEnabled } from './lib/cashback'
-import { reviewCount } from './lib/photos'
+import { reviewCount, addPhoto } from './lib/photos'
+import { toast } from './lib/toast'
+
+// How long a "Where are you?" confirmation stays fresh — the store sheet
+// doesn't nag again within this window (§9b).
+const STORE_CONFIRM_MS = 60 * 60 * 1000
+const STORE_CONFIRM_KEY = 'spmkt.storeConfirmedAt'
 
 // Navigation: three destinations (Home · Review · Settings) plus a center
-// ➕ FAB that jumps straight into logging a price at the current store (the
-// store sheet asks "Where are you?" first when none is set). Bottom nav bar
-// on mobile, navigation rail on desktop (≥900px). Detail screens (item,
+// ➕ FAB that opens an Android-style menu — Manual entry or Photo batch. The
+// pick is confirmed against the current store ("Where are you?"), then runs;
+// that confirmation is skipped for an hour after each pick. Bottom nav bar on
+// mobile, navigation rail on desktop (≥900px). Detail screens (item,
 // addPrice) are pushed onto the view stack, mirrored into browser history.
 export default function App() {
   const [user, setUser] = useState(undefined) // undefined = auth loading, null = signed out
   const [db, setDb] = useState(null)
   const [stack, setStack] = useState([{ name: 'home' }])
-  const [storeSheet, setStoreSheet] = useState(false) // FAB pressed with no store set
+  const [storeSheet, setStoreSheet] = useState(false) // store confirm before an add action
+  const [fabMenu, setFabMenu] = useState(false) // ➕ speed-dial open
+  const pendingAction = useRef(null) // 'manual' | 'photo' — chosen action awaiting store confirm
+  const cameraRef = useRef(null)
+  const photoStoreRef = useRef(null) // storeId stamped on batch photos
 
   useEffect(() => watchAuth(setUser), [])
 
@@ -110,12 +121,58 @@ export default function App() {
   const nReview = reviewCount(db)
   const tab = ['item', 'addPrice'].includes(view.name) ? null : view.name
 
-  // ➕ FAB: log a price where you are; ask for the store first if unknown.
-  const startAdd = () => {
-    const store = db.stores.find((s) => s.id === db.currentStoreId)
-    if (store) push({ name: 'addPrice', storeId: store.id })
-    else setStoreSheet(true)
+  // Run the chosen ➕ action at a confirmed store: manual → AddPrice form;
+  // photo → open the camera (batch capture) stamped with that store.
+  const runAction = (action, storeId) => {
+    if (action === 'photo') {
+      photoStoreRef.current = storeId
+      cameraRef.current?.click()
+    } else {
+      push({ name: 'addPrice', storeId })
+    }
   }
+
+  // ➕ menu pick: confirm the store first ("Where are you?") unless we have a
+  // store and confirmed it within the last hour; then run the action.
+  const chooseAction = (action) => {
+    setFabMenu(false)
+    const store = db.stores.find((s) => s.id === db.currentStoreId)
+    const confirmedAt = Number(localStorage.getItem(STORE_CONFIRM_KEY) || 0)
+    const fresh = Date.now() - confirmedAt < STORE_CONFIRM_MS
+    if (store && fresh) {
+      runAction(action, store.id)
+    } else {
+      pendingAction.current = action
+      setStoreSheet(true)
+    }
+  }
+
+  // Batch photo capture: queue every selected shot for the confirmed store.
+  const snapPhotos = async (e) => {
+    const files = [...(e.target.files ?? [])]
+    e.target.value = ''
+    const storeId = photoStoreRef.current
+    if (!files.length || !storeId) return
+    try {
+      for (const file of files) await addPhoto(update, file, storeId)
+      toast(`${files.length} photo${files.length === 1 ? '' : 's'} queued 📷`)
+      navigator.vibrate?.(15)
+    } catch (err) {
+      console.error('photo upload failed', err)
+      toast(`⚠️ Photo upload failed: ${err.message}`)
+    }
+  }
+
+  const addMenu = (
+    <div className="fab-menu">
+      <button className="fab-action" onClick={() => chooseAction('manual')}>
+        <span className="mini">✏️</span> Manual entry
+      </button>
+      <button className="fab-action" onClick={() => chooseAction('photo')}>
+        <span className="mini">📷</span> Photo batch
+      </button>
+    </div>
+  )
 
   const destinations = (
     <>
@@ -129,7 +186,17 @@ export default function App() {
     <div className="app">
       {/* desktop navigation rail */}
       <nav className="rail">
-        <button className="rail-fab" title="Add a price (at your current store)" onClick={startAdd}>＋</button>
+        <div className="rail-fab-wrap">
+          <button
+            className={`rail-fab${fabMenu ? ' open' : ''}`}
+            title="Add a price"
+            aria-expanded={fabMenu}
+            onClick={() => setFabMenu((v) => !v)}
+          >
+            ＋
+          </button>
+          {fabMenu && <div className="rail-menu">{addMenu}</div>}
+        </div>
         {destinations}
       </nav>
 
@@ -158,8 +225,22 @@ export default function App() {
         {view.name === 'settings' && <Settings {...props} onSignOut={() => signOutUser()} />}
       </div>
 
-      {/* mobile: center FAB above the nav bar */}
-      {tab && <button className="fab" aria-label="Add a price" onClick={startAdd}>＋</button>}
+      {/* mobile: center FAB (speed dial) above the nav bar */}
+      {tab && (
+        <div className="fab-wrap">
+          {fabMenu && addMenu}
+          <button
+            className={`fab${fabMenu ? ' open' : ''}`}
+            aria-label="Add a price"
+            aria-expanded={fabMenu}
+            onClick={() => setFabMenu((v) => !v)}
+          >
+            ＋
+          </button>
+        </div>
+      )}
+
+      {fabMenu && <div className="fab-scrim" onClick={() => setFabMenu(false)} />}
 
       <nav className="nav">{destinations}</nav>
 
@@ -168,9 +249,23 @@ export default function App() {
           db={db}
           update={update}
           onClose={() => setStoreSheet(false)}
-          onPick={(store) => push({ name: 'addPrice', storeId: store.id })}
+          onPick={(store) => {
+            localStorage.setItem(STORE_CONFIRM_KEY, String(Date.now()))
+            runAction(pendingAction.current ?? 'manual', store.id)
+          }}
         />
       )}
+
+      {/* hidden batch camera input for the ➕ → Photo batch action */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        hidden
+        onChange={snapPhotos}
+      />
 
       <Snackbar />
     </div>

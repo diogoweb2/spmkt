@@ -1,44 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
-import { uid } from '../lib/db'
+import { useEffect, useState } from 'react'
 import { unitKind, fmtQty } from '../lib/units'
+import { uid } from '../lib/db'
 import { guessMeatType, GROCERY_TYPE_LABEL } from '../lib/meat'
-import { addPhoto, photoUrl, removePhoto } from '../lib/photos'
+import { photoUrl, removePhoto } from '../lib/photos'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
-import StoreSheet from '../components/StoreSheet'
 
-// 📷 Review — the photo-mode inbox (BUSINESS_RULES §15). Photos snapped
-// in-store sit here as "pending" until the daily processing job extracts
-// them (product, price, qty/unit, category); each extracted entry becomes a
-// big card with every field visible, so the only decision is ✓ Approve or
-// ✏️ Edit — no drilling into items one by one.
+// 📷 Review — the photo-mode inbox (BUSINESS_RULES §15). Photos are captured
+// via the ➕ FAB's "Photo batch" action (§9b) and sit here as "pending" until
+// the daily processing job extracts them (product, price, qty/unit,
+// category); each extracted entry becomes a big card with every field
+// visible, so the only decision is ✓ Approve or ✏️ Edit — no drilling into
+// items one by one.
 export default function Review({ db, update, push }) {
   const queue = [...(db.photoQueue ?? [])].sort((a, b) => b.ts - a.ts)
   const ready = queue.filter((p) => p.status === 'ready')
   const pending = queue.filter((p) => p.status === 'pending')
   const failed = queue.filter((p) => p.status === 'failed')
-  const cameraRef = useRef(null)
-  const [storeSheet, setStoreSheet] = useState(false)
-  const [snapState, setSnapState] = useState(null)
-
-  const currentStore = db.stores.find((s) => s.id === db.currentStoreId)
-
-  async function snap(e) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setSnapState('busy')
-    try {
-      await addPhoto(update, file, currentStore.id)
-      toast('Photo queued 📷')
-      navigator.vibrate?.(15)
-    } catch (err) {
-      console.error('photo upload failed', err)
-      toast(`⚠️ Photo upload failed: ${err.message}`)
-    } finally {
-      setSnapState(null)
-    }
-  }
 
   // Approve an extracted entry against the draft db: reuse the matched item
   // or create it, append the record (ts = when the photo was taken,
@@ -105,16 +83,8 @@ export default function Review({ db, update, push }) {
 
   return (
     <div className="screen">
-      <div className="topbar" style={{ justifyContent: 'space-between' }}>
+      <div className="topbar">
         <h1>Review 📷</h1>
-        <button
-          className="btn small tonal"
-          disabled={snapState === 'busy'}
-          onClick={() => (currentStore ? cameraRef.current?.click() : setStoreSheet(true))}
-        >
-          {snapState === 'busy' ? 'Uploading…' : '📷 Snap label'}
-        </button>
-        <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={snap} />
       </div>
 
       {queue.length === 0 && (
@@ -122,8 +92,8 @@ export default function Review({ db, update, push }) {
           <div className="ico">📷</div>
           Nothing to review.
           <div className="sub small" style={{ marginTop: 8, lineHeight: 1.5 }}>
-            In a store, snap a photo of a shelf label (here or from the add screen).
-            The daily 9:20 job reads it and the extracted price shows up here to approve.
+            In a store, tap ➕ → 📷 Photo batch to snap shelf labels.
+            The daily 9:20 job reads them and the extracted prices show up here to approve.
           </div>
         </div>
       )}
@@ -176,15 +146,6 @@ export default function Review({ db, update, push }) {
             </div>
           ))}
         </>
-      )}
-
-      {storeSheet && (
-        <StoreSheet
-          db={db}
-          update={update}
-          onClose={() => setStoreSheet(false)}
-          onPick={() => toast('Store set 📍 — now snap the label')}
-        />
       )}
     </div>
   )
