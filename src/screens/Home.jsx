@@ -56,7 +56,7 @@ export default function Home({ db, update, push }) {
   const [typesOff, setTypesOff] = useSessionState('home.typesOff', () => new Set(), { set: true })
   const [catsOff, setCatsOff] = useSessionState('home.catsOff', () => new Set(), { set: true })
   const [proc, setProc] = useSessionState('home.proc', 'all')
-  const [sort, setSort] = useSessionState('home.sort', 'price')
+  const [sort, setSort] = useSessionState('home.sort', 'deal')
   const [q, setQ] = useSessionState('home.q', '')
 
   // ONE selection mode. Keys: item id in Deals view, `${itemId}|${variant}`
