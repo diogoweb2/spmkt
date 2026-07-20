@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fmtQty, unitKind } from '../lib/units'
 import { GROCERY_TYPE_LABEL } from '../lib/meat'
-import { photoUrl, removePhoto, applyEntry } from '../lib/photos'
+import { photoUrl, removePhoto, applyEntry, entryItemId } from '../lib/photos'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
 import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
@@ -33,8 +33,9 @@ export default function Review({ db, update, push }) {
       toast(`Saved ${entry.itemName} — $${entry.price}`)
       return
     }
-    let itemId
-    update((d) => { itemId = applyEntry(d, entry) })
+    // Resolve the id before update() — its mutator is deferred by React.
+    const itemId = entryItemId(db, entry)
+    update((d) => applyEntry(d, entry, itemId))
     const items = [
       db.items.find((i) => i.id === itemId) ?? { id: itemId, name: entry.itemName },
       ...picked.map((id) => db.items.find((i) => i.id === id)),

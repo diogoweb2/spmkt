@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { applyEntry, addPhoto } from '../lib/photos'
+import { applyEntry, addPhoto, entryItemId } from '../lib/photos'
 import { GROCERY_TYPE_LABEL } from '../lib/meat'
+import { unitKind } from '../lib/units'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
 import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
@@ -20,11 +21,12 @@ export default function LiveSheet({ db, update, live, onClose, onRetry, onEdit, 
   const [mergeFor, setMergeFor] = useState(null)
 
   // Saving hands off to the merge step when there is something to suggest;
-  // otherwise straight to the product page.
-  function afterSave(itemId) {
-    const item = db.items.find((i) => i.id === itemId)
-    const suggestions = item ? mergeSuggestions(db, item) : []
-    if (suggestions.length) setMergeFor(itemId)
+  // otherwise straight to the product page. The item may have just been
+  // created and not be in `db` yet (the write is still committing), so the
+  // suggestion probe is built from the id + saved name rather than looked up.
+  function afterSave(itemId, savedName, unit) {
+    const probe = db.items.find((i) => i.id === itemId) ?? { id: itemId, name: savedName, kind: unitKind(unit) }
+    if (mergeSuggestions(db, probe).length) setMergeFor(probe)
     else onSaved(itemId)
   }
 
@@ -33,7 +35,7 @@ export default function LiveSheet({ db, update, live, onClose, onRetry, onEdit, 
       <MergeStep
         db={db}
         update={update}
-        itemId={mergeFor}
+        probe={mergeFor}
         onDone={(finalId) => { setMergeFor(null); onSaved(finalId) }}
       />
     )
@@ -64,13 +66,13 @@ export default function LiveSheet({ db, update, live, onClose, onRetry, onEdit, 
 // Step 2 of ⚡ Photo Live: "is this the same product as…?" (§15d). Pure
 // name-similarity suggestions — no AI. Skipping goes to the item just saved;
 // merging asks for the final name and then opens the merged group's page.
-function MergeStep({ db, update, itemId, onDone }) {
-  const item = db.items.find((i) => i.id === itemId)
+function MergeStep({ db, update, probe, onDone }) {
+  // `probe` is the item just saved — the real one from db when it already
+  // existed, otherwise a stand-in {id, name, kind} for the item being created.
+  const item = db.items.find((i) => i.id === probe.id) ?? probe
   const [picked, setPicked] = useState([])
   const [name, setName] = useState(null) // non-null = naming dialog open
-  const suggestions = item ? mergeSuggestions(db, item) : []
-
-  if (!item) return null
+  const suggestions = mergeSuggestions(db, item)
 
   function startMerge() {
     const items = [item, ...picked.map((id) => db.items.find((i) => i.id === id))].filter(Boolean)
@@ -187,10 +189,13 @@ function ReadyBody({ db, update, entry, onClose, onEdit, onSaved }) {
 
   function save() {
     if (!valid) return
-    let itemId
-    update((d) => { itemId = applyEntry(d, edited()) })
+    // Resolve the id first: update()'s mutator is deferred by React, so a value
+    // assigned inside it is still undefined on the next line.
+    const entry2 = edited()
+    const itemId = entryItemId(db, entry2)
+    update((d) => applyEntry(d, entry2, itemId))
     toast(`Saved ${name.trim()} — $${priceNum}`)
-    onSaved(itemId)
+    onSaved(itemId, name.trim(), unit)
   }
 
   const Flag = ({ on, set, yes, no }) => (

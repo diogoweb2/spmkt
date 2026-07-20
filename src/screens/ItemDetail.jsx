@@ -25,7 +25,25 @@ export default function ItemDetail({ db, update, push, pop, view }) {
     () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
     [db.rvSent],
   )
-  if (!item) return null
+  // No item for this id (deleted, merged away, or a bad push): show a way back
+  // instead of a blank screen — `return null` here renders nothing at all, not
+  // even the nav bar, and looks like the app crashed.
+  if (!item) {
+    return (
+      <div className="screen">
+        <div className="topbar">
+          <button className="icon-btn" aria-label="Back" onClick={pop}>←</button>
+          <h1>Product</h1>
+        </div>
+        <div className="empty">
+          <div className="ico">🔍</div>
+          This product isn't here anymore.
+          <div className="sub small" style={{ marginTop: 8 }}>It may have been merged into another product or deleted.</div>
+          <button className="btn" style={{ marginTop: 16 }} onClick={pop}>← Go back</button>
+        </div>
+      </div>
+    )
+  }
 
   const allRecs = itemRecords(db, item.id)
 

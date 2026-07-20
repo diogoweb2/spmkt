@@ -61,14 +61,20 @@ export function removePhoto(update, entry) {
 // was taken, source 'photo'), drop the queue entry if it was queued. Must run
 // inside update()'s mutate so a batch sees items created by earlier entries.
 // Returns the item id (so Photo Live can navigate to the product page).
-export function applyEntry(d, entry) {
+//
+// `newId` pre-assigns the id used when the entry creates a new item. Callers
+// that need the id *before* the state update lands (React defers update()'s
+// mutator, so reading a value written inside it is a race) pass one from
+// `entryItemId` below; it also keeps the result identical if React runs the
+// mutator twice in StrictMode.
+export function applyEntry(d, entry, newId = null) {
   const meat = entry.category === 'meat'
   let item =
     d.items.find((i) => i.id === entry.matchedItemId) ??
     d.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
   if (!item) {
     item = {
-      id: uid('i'),
+      id: newId ?? uid('i'),
       name: entry.itemName,
       category: meat ? 'meat' : 'other',
       kind: unitKind(entry.unit),
@@ -98,6 +104,17 @@ export function applyEntry(d, entry) {
   })
   d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== entry.id)
   return item.id
+}
+
+// The item id an entry will land on, resolved against the *current* db and
+// known before applyEntry runs: the matched/existing item, or a freshly minted
+// id to hand applyEntry as `newId`. Lets a caller navigate to (or suggest
+// merges for) the item without waiting for the state update to commit.
+export function entryItemId(db, entry) {
+  const existing =
+    db.items.find((i) => i.id === entry.matchedItemId) ??
+    db.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
+  return existing?.id ?? uid('i')
 }
 
 // Entries awaiting the user: extracted and ready to approve, or failed.

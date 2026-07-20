@@ -254,6 +254,10 @@ Recoverable actions use a **snackbar with UNDO** (5 s) instead of a blocking con
 
 - Sorted **cheapest-first by default** (reference-only by-piece records at the bottom, date-desc among themselves), with a `$ Price / 🕒 Date` toggle.
 - Expired flyer records are **dimmed**; a "Hide expired" button (shown only when some are expired) filters them out. Display-only — stats/comparisons are unaffected.
+- **Unknown product id** (deleted, merged away, or a bad navigation): the page shows a "This product isn't here anymore" empty state with a ← Go back button, never a blank screen.
+
+### Writing an item and navigating to it
+`update()` hands its mutator to React's `setDb`, so it runs **later** — a value assigned inside the mutator is still `undefined` on the next line. Any caller that needs the item id it just wrote (to navigate there, or to compute merge suggestions) must resolve the id **first** with `entryItemId(db, entry)` and pass it into `applyEntry(d, entry, newId)`. This also makes the mutator idempotent, so React StrictMode's double-invoke can't create the item twice.
 
 ## 15d. 🔗 Merge suggestions after a photo (no AI)
 
