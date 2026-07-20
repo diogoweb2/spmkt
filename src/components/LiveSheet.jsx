@@ -232,6 +232,7 @@ function ReadyBody({ db, update, entry, onClose, onEdit, onSaved }) {
         {meat && <Flag on={frozen} set={setFrozen} yes="❄️ frozen" no="🥩 fresh" />}
         {meat && <Flag on={bones} set={setBones} yes="🦴 bone-in" no="boneless" />}
         {meat && <Flag on={skin} set={setSkin} yes="skin-on" no="skinless" />}
+        {entry.minQty >= 2 && <span className="badge lvl-ok" title={`price requires buying ${entry.minQty} or more`}>🛒 buy {entry.minQty}+</span>}
         {matched
           ? <span className="badge lvl-first">matches “{matched.name}”</span>
           : <span className="badge lvl-ok">new product</span>}

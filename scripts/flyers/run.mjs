@@ -86,13 +86,14 @@ const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist) => `Us
 ${imgPaths.join('\n')}
 
 Extract every grocery deal from ALL pages combined. Output ONLY a single JSON array (no prose, no markdown fence). If the same product appears on more than one page, output it once. Each element:
-{"name": string, "origName": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "page": number}
+{"name": string, "origName": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "minQty": number|null, "page": number}
 
 Rules:
 - page: the flyer page the deal appears on = the NN number in the image file's name ("...-pageNN.jpg" -> page NN). If a product appears on several pages, use the first.
 - name: clean generic product name with brand if shown (e.g. "Chicken Drumsticks", "Coca-Cola 12-pack"). No sizes/prices in the name.
 - origName: the product name exactly as printed on the flyer (brand, variety, wording — still no sizes/prices). This is what the user reads on the shelf, so keep it faithful even when "name" is a generic/db name that groups it with similar products.
-- price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un". A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
+- price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un", minQty 2. A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
+- minQty — multi-buy deals ("2 for $5", "2/$2.50", "3/$10", "buy 2 or more"): price = the PER-ITEM deal price and minQty = the minimum count the shopper must buy to get it (2, 2, 3, 2 in those examples). When the flyer also shows a single-item price ("2/$2.50 OR $1.50 EA"), record the multi-buy price with its minQty (price 1.25, minQty 2 there) — the multi-buy is the deal. If each item has a printed size, qty+unit still describe ONE item ("2/$7" on 500 g boxes -> price 3.50, qty 500, unit "g", minQty 2). Normal prices with no minimum -> minQty null.
 - The item kinds must stay consistent: weight units (kg/g/lb/oz) only when a weight is printed or the price is per weight.
 - Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. If a multi-product deal shows a different size per product, use each product's own size.
 - NEVER invent or estimate a weight/volume that is not printed on the flyer. If a product is priced by piece or by package with no size printed (e.g. "BONELESS SKINLESS CHICKEN BREAST, 3 piece — ONLY $8", "2 for $5"), use unit "un" with qty = the number of pieces/items (3 and 1 in those examples). This applies to meat too: "3 piece $8" -> price 8, qty 3, unit "un", category "meat". A wrong guessed weight is far worse than an honest per-piece price.
@@ -195,6 +196,9 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
         typeof p.origName === 'string' && p.origName.trim() && p.origName.trim().toLowerCase() !== item.name.trim().toLowerCase()
           ? p.origName.trim()
           : null,
+      // Multi-buy deals ("2/$2.50"): price is per item, minQty = how many the
+      // shopper must buy to get it. Indicator only — comparisons are unchanged.
+      minQty: Number.isInteger(p.minQty) && p.minQty >= 2 ? p.minQty : null,
       source: 'flyer',
       validUntil: validUntil ?? null,
       // The app links the 📰 badge to the flyer site — #p=<page> when the

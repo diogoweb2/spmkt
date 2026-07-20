@@ -91,6 +91,8 @@ export function applyEntry(d, entry) {
     frozen: meat ? !!entry.frozen : null,
     bones: meat ? !!entry.bones : null,
     skin: meat ? !!entry.skin : null,
+    // Multi-buy price (§1): must buy N to get this per-item price.
+    ...(Number.isInteger(entry.minQty) && entry.minQty >= 2 ? { minQty: entry.minQty } : {}),
     ts: entry.ts,
     source: 'photo',
   })

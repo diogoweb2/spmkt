@@ -187,6 +187,7 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
         {meat && <span className="badge">{entry.frozen ? '❄️ frozen' : '🥩 fresh'}</span>}
         {meat && <span className="badge">{entry.bones ? '🦴 bone-in' : 'boneless'}</span>}
         {meat && <span className="badge">{entry.skin ? 'skin-on' : 'skinless'}</span>}
+        {entry.minQty >= 2 && <span className="badge lvl-ok" title={`price requires buying ${entry.minQty} or more`}>🛒 buy {entry.minQty}+</span>}
         {matched
           ? <span className="badge lvl-first">matches “{matched.name}”</span>
           : <span className="badge lvl-ok">new product</span>}

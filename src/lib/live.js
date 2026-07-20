@@ -29,7 +29,8 @@ const PROMPT = (existingNames) => `This is a photo of ONE supermarket product / 
 - category: "meat" for meat/poultry/fish/seafood (fresh, frozen or processed), else "other".
 - Meat only — frozen (true/false), bones (true/false), skin (true/false), best guess from the photo/product; processing: "natural" for whole/raw cuts, "ultra" for nuggets/sausages/bacon/deli/breaded/marinated.
 - Non-meat only — groceryType: one of ${JSON.stringify(GROCERY_TYPES)} (supermarket section).
-- note: anything important you could read that doesn't fit the fields (multi-buy conditions, member price...), else omit.
+- minQty: ONLY for multi-buy prices ("2 for $5", "2/$2.50", "3/$10", "buy 2 or more"): the minimum count required, with price = the PER-ITEM deal price ("2/$2.50" -> price 1.25, minQty 2; a "or $1.50 ea" single price is ignored — the multi-buy is the deal). qty+unit still describe ONE item. Omit for normal prices.
+- note: anything important you could read that doesn't fit the fields (member price...), else omit.
 - If the photo is unreadable or shows no price, return {"error": "<short reason>"}.
 
 The user's existing items: ${JSON.stringify(existingNames)}
@@ -112,6 +113,7 @@ export async function extractLive(db, file, storeId) {
         }
       : { groceryType: GROCERY_TYPES.includes(r.groceryType) ? r.groceryType : 'other' }),
   }
+  if (Number.isInteger(r.minQty) && r.minQty >= 2) entry.minQty = r.minQty
   if (r.note) entry.note = String(r.note)
   return entry
 }

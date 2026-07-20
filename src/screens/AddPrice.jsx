@@ -77,6 +77,12 @@ export default function AddPrice({ db, update, push, pop, view }) {
     const v = editRec?.validUntil
     return v ? new Date(v).toISOString().slice(0, 10) : ''
   })
+  // Optional multi-buy minimum ("2/$2.50" deals): the price is per item, but
+  // only when buying at least N. Indicator only — comparisons are unchanged.
+  const [minQty, setMinQty] = useState(() => {
+    const v = photoEntry?.minQty ?? editRec?.minQty ?? startHere?.minQty
+    return v >= 2 ? String(v) : ''
+  })
   // "You paid a different price here before" dialog: null | {prevRec}
   const [priceChoice, setPriceChoice] = useState(null)
   const cameraRef = useRef(null)
@@ -116,6 +122,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
     setBones(last?.bones ?? false)
     setSkin(last?.skin ?? false)
     setUntil(here?.validUntil ? new Date(here.validUntil).toISOString().slice(0, 10) : '')
+    setMinQty(here?.minQty >= 2 ? String(here.minQty) : '')
   }
 
   function startCreate() {
@@ -125,6 +132,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
     setQty('1')
     setPrice('')
     setUntil('')
+    setMinQty('')
   }
 
   const formVisible = item || creating
@@ -142,6 +150,8 @@ export default function AddPrice({ db, update, push, pop, view }) {
   // Parse the optional "until" date to end-of-day epoch ms (local), so the
   // price stays valid through the whole of that day. Empty → no expiry.
   const validUntil = until ? new Date(`${until}T23:59:59`).getTime() : null
+  // Multi-buy minimum: whole number ≥ 2, anything else means "no minimum".
+  const minQtyNum = /^\d+$/.test(minQty.trim()) && parseInt(minQty, 10) >= 2 ? parseInt(minQty, 10) : null
 
   const prevHere = item && !editRec ? lastAtStore(item.id) : null
   // Store mode is a shelf-tag match ("is the price still the same?"), so the
@@ -167,6 +177,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
         bones: meat ? bones : null,
         skin: meat ? skin : null,
         ts: photoEntry?.ts ?? Date.now(),
+        ...(minQtyNum ? { minQty: minQtyNum } : {}),
         // A user-typed "until <date>" makes this a limited-time price that
         // expires and shows the 📰 badge — same handling as a flyer deal.
         ...(validUntil ? { source: 'flyer', validUntil } : {}),
@@ -187,6 +198,8 @@ export default function AddPrice({ db, update, push, pop, view }) {
       rec.frozen = meat ? frozen : null
       rec.bones = meat ? bones : null
       rec.skin = meat ? skin : null
+      if (minQtyNum) rec.minQty = minQtyNum
+      else delete rec.minQty
       if (validUntil) { rec.source = 'flyer'; rec.validUntil = validUntil }
       else if (rec.source === 'flyer' && !rec.flyerUrl) { delete rec.source; delete rec.validUntil }
       if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
@@ -212,6 +225,8 @@ export default function AddPrice({ db, update, push, pop, view }) {
         rec.frozen = meat ? frozen : null
         rec.bones = meat ? bones : null
         rec.skin = meat ? skin : null
+        if (minQtyNum) rec.minQty = minQtyNum
+        else delete rec.minQty
         // Manual "until" edit: set/clear the expiry window. Don't strip a real
         // flyer import's source (it keeps its url/page); only clear the window
         // for records that were manual "until" prices to begin with.
@@ -228,7 +243,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
     if (prevHere && item) {
       const same =
         prevHere.price === finalPrice && prevHere.qty === qtyNum && prevHere.unit === unit &&
-        (prevHere.validUntil ?? null) === validUntil
+        (prevHere.validUntil ?? null) === validUntil && (prevHere.minQty ?? null) === minQtyNum
       if (same) {
         toast('Same price as last time — nothing new to save 👍')
         push({ name: 'item', itemId: item.id })
@@ -540,6 +555,29 @@ export default function AddPrice({ db, update, push, pop, view }) {
               </div>
             </>
           )}
+
+          <label className="field">
+            <span className="lbl">Multi-buy minimum <span className="muted">(optional)</span></span>
+            <input
+              type="number"
+              inputMode="numeric"
+              step="1"
+              min="2"
+              placeholder="e.g. 2 for a “2/$2.50” deal"
+              value={minQty}
+              onChange={(e) => setMinQty(e.target.value)}
+            />
+            {minQtyNum ? (
+              <span className="muted small" style={{ marginTop: 4 }}>
+                🛒 Price is per item, but only when buying {minQtyNum}+
+                {finalPrice > 0 ? ` (${minQtyNum} × $${finalPrice.toFixed(2)} = $${(minQtyNum * finalPrice).toFixed(2)})` : ''}.
+              </span>
+            ) : (
+              <span className="muted small" style={{ marginTop: 4 }}>
+                For “2/$2.50”-style deals: enter the per-item price above and the minimum here.
+              </span>
+            )}
+          </label>
 
           <label className="field">
             <span className="lbl">Sale until <span className="muted">(optional)</span></span>

@@ -195,7 +195,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                         <div className="title">
                           {selected ? '☑️ ' : idx === 0 && byStore.length > 1 ? '🏆 ' : ''}{store.name}
                         </div>
-                        <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? <> · <FlyerLink fi={flyerInfo(rec)} /></> : ''}</div>
+                        <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))}{rec.minQty >= 2 ? ` · 🛒 buy ${rec.minQty}+` : ''} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? <> · <FlyerLink fi={flyerInfo(rec)} /></> : ''}</div>
                       </div>
                       <div className="right title">{fmt(norm)}</div>
                       <span
@@ -301,7 +301,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                       aria-label="Edit record"
                     >
                       <div className="title small" style={{ fontSize: 14 }}>
-                        {store?.name ?? '?'} · {fmtQty(r.qty, r.unit)} ✏️
+                        {store?.name ?? '?'} · {fmtQty(r.qty, r.unit)}{r.minQty >= 2 ? ` · 🛒 buy ${r.minQty}+` : ''} ✏️
                       </div>
                       {r.origName && <div className="sub" style={{ fontStyle: 'italic' }}>“{r.origName}”</div>}
                       <div className="sub">{new Date(r.ts).toLocaleDateString()}{flyerInfo(r) ? <> · <FlyerLink fi={flyerInfo(r)} /></> : ''}</div>

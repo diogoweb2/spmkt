@@ -511,6 +511,7 @@ export default function Home({ db, update, push }) {
                         <div className="right">
                           <div className="title">{fmtDisplay(d.norm, d.byPiece ? 'count' : d.item.kind, db.displayWeightUnit)}</div>
                           {d.byPiece && <span className="badge lvl-ok">📦 by piece</span>}
+                          {d.rec.minQty >= 2 && <span className="badge lvl-ok" title={`price requires buying ${d.rec.minQty} or more`}>🛒 buy {d.rec.minQty}+</span>}
                           {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
                         </div>
                         {!selecting && (() => {
