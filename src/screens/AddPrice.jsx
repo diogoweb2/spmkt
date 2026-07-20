@@ -219,6 +219,18 @@ export default function AddPrice({ db, update, push, pop, view }) {
         const meat = category === 'meat'
         it.category = category
         it.processing = meat ? processing : null
+        // Unit is editable here, so a wrong kind picked at creation ("un" on a
+        // 2 L juice) can be corrected. Only adopt the new kind when no other
+        // record disagrees — otherwise flipping it would silently strand every
+        // sibling record as reference-only (§3).
+        const newKind = unitKind(unit)
+        const othersAgree = d.records.every(
+          (r) => r.id === rec.id || r.itemId !== itemId || unitKind(r.unit) === newKind,
+        )
+        if (othersAgree && it.kind !== newKind) {
+          it.kind = newKind
+          it.defaultUnit = unit
+        }
         rec.price = finalPrice
         rec.qty = qtyNum
         rec.unit = unit
@@ -296,7 +308,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
   const meatItem = (item ?? { category }).category === 'meat'
   const unitChoices = meatItem
     ? pkg ? KIND_UNITS.weight : ['kg', 'lb', 'un']
-    : item ? KIND_UNITS[item.kind] : ALL_UNITS
+    : editRec || !item ? ALL_UNITS : KIND_UNITS[item.kind]
   if (!unitChoices.includes(unit)) setUnit(unitChoices.includes(store?.defaultUnit) ? store.defaultUnit : unitChoices[0])
   const byPiece = item && unitKind(unit) !== item.kind
 
