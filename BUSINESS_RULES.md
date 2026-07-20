@@ -250,6 +250,17 @@ Recoverable actions use a **snackbar with UNDO** (5 s) instead of a blocking con
 - Sorted **cheapest-first by default** (reference-only by-piece records at the bottom, date-desc among themselves), with a `$ Price / 🕒 Date` toggle.
 - Expired flyer records are **dimmed**; a "Hide expired" button (shown only when some are expired) filters them out. Display-only — stats/comparisons are unaffected.
 
+## 15d. 🔗 Merge suggestions after a photo (no AI)
+
+Photo capture is where duplicates are born ("Milk 3.25 bag" today, "Milk 3.25% Brand X" next week), so both photo paths offer merging right where the product is added. Suggestions are computed **locally from the names — no AI call, no API cost**. Code: `mergeSuggestions`/`nameScore`/`tokens`/`memberNames` in `src/lib/merge.js`, `src/components/MergeSuggest.jsx`.
+
+- **Scoring**: each name becomes a token set — lowercased, punctuation stripped, stop words dropped (packaging: bag/box/pack/carton…, sizes, marketing words, unit names), 1-character fragments dropped **except digits**, crude plural `s` removed (`burgers` → `burger`). The score is the **overlap coefficient**: shared tokens ÷ the *smaller* set, so a short generic name ("beef burger") still matches a long store name ("beef burgers Angus quarter pound 4 pack") — exactly the merge that's wanted. **Numeric guard**: if both names contain numbers and share none, the score is cut to 40% — "milk 3.25" and "milk 1%" are different products however well the words line up. Suggested at **score ≥ 0.5**, same `kind` only (merge requires it), best match first, max 6.
+- **Expansion (▾)**: a suggestion can be expanded to show the **real product names behind it** — the item's own name plus every distinct `origName` on its records (i.e. everything a previous merge folded in), plus its recent store prices. A generic "beef burger" group must reveal what's actually in it for the merge decision to be informed.
+- **⚡ Photo Live**: after ✓ Save the sheet goes to a **"🔗 Same product?" step** when there are suggestions — checkboxes, ▾ expansion, **Keep separate** or **🔗 Merge (n)**. Merging asks for the final name and then opens the **merged group's page**; with no suggestions (or on Keep separate) it goes **straight to the product page** of the item just added. Photo Live never routes to the Review tab — the review happens at capture time.
+- **📷 Photo batch (Review tab)**: each ready card gets a **"🔗 n similar products" expansion arrow** listing the same suggestions with checkboxes. Selecting one or more turns the button into **✓ Approve & merge (n)**: the entry is applied first (so its price is kept), then the naming dialog opens. "Approve all" never merges — it takes the plain path.
+- **Merging into an existing group**: when one of the picks is already a merge group (it has records with `origName`), **its name is the prefilled default** instead of the newcomer's — `suggestName(items, recordCounts, groupIds(db))`. The dialog is always shown; the user can override. Home's manual Merge action uses the same group-aware default.
+- The merge itself is the **normal `mergeItems`** (§14): all prices kept, `origName` preserved, unit normalization, duplicate-flyer collapse.
+
 ## 16. Roadmap (agreed, not yet built)
 
 - ~~Phase 2: Firebase (auth + Firestore sync)~~ — **done (2026-07)**: Google auth, Firestore db, Hosting, GitHub auto-deploy (`.github/workflows/deploy.yml`, pushes to `main` on github.com/diogoweb2/spmkt). Notifications and offline data intentionally left out.

@@ -12,12 +12,102 @@ export function canMerge(items) {
   return items.length >= 2 && items.every((i) => i.kind === items[0].kind)
 }
 
+// ---------- merge suggestions (no AI, §15d) ----------
+// Words that carry no product identity — packaging, sizes, marketing. They are
+// dropped before comparing names so "milk 3.25 bag" and "milk 3.25 Brand X"
+// still meet on {milk, 3.25}.
+const STOP_WORDS = new Set([
+  'the', 'a', 'of', 'and', 'with', 'in', 'de', 'du', 'la', 'le', 'les',
+  'bag', 'box', 'pack', 'package', 'carton', 'bottle', 'jar', 'can', 'tin',
+  'tray', 'tub', 'pouch', 'jug', 'container', 'sleeve', 'family', 'value',
+  'size', 'large', 'small', 'medium', 'mini', 'jumbo', 'big', 'xl',
+  'fresh', 'frozen', 'organic', 'natural', 'new', 'select', 'premium',
+  'brand', 'style', 'type', 'assorted', 'variety', 'original', 'classic',
+  'kg', 'g', 'lb', 'lbs', 'oz', 'ml', 'l', 'un', 'ea', 'each', 'pc', 'pcs',
+])
+
+// Name → comparable tokens: lowercased, punctuation stripped, stop words and
+// 1-char fragments dropped, crude plural 's' removed so "burger"/"burgers" and
+// "breast"/"breasts" are the same token.
+export function tokens(name) {
+  return [
+    ...new Set(
+      (name ?? '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}.]+/gu, ' ')
+        .split(' ')
+        .map((w) => w.replace(/^\.+|\.+$/g, ''))
+        // Single letters are noise, but a single digit is a variant ("milk 1%").
+        .filter((w) => (w.length > 1 || /\d/.test(w)) && !STOP_WORDS.has(w))
+        .map((w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w)),
+    ),
+  ]
+}
+
+// How alike two names are, 0…1. Overlap coefficient (shared tokens over the
+// *smaller* token set) rather than Jaccard: a short generic name ("beef
+// burger") should still score high against a long store name ("beef burgers
+// angus quarter pound 4 pack"), which is exactly the merge we want to suggest.
+export function nameScore(a, b) {
+  const ta = tokens(a)
+  const tb = tokens(b)
+  if (!ta.length || !tb.length) return 0
+  const shared = ta.filter((t) => tb.includes(t)).length
+  if (!shared) return 0
+  const score = shared / Math.min(ta.length, tb.length)
+  // Numbers in a grocery name are almost always the variant that matters
+  // ("milk 3.25" vs "milk 1%"). If both names carry numbers and none is
+  // shared, they're different products however well the words line up.
+  const na = ta.filter((t) => /\d/.test(t))
+  const nb = tb.filter((t) => /\d/.test(t))
+  if (na.length && nb.length && !na.some((n) => nb.includes(n))) return score * 0.4
+  return score
+}
+
+// Below this two names are treated as different products.
+const SUGGEST_MIN = 0.5
+
+// Items that look like the same product as `item` — same `kind` (merge
+// requires it), sorted best match first. `exclude` skips ids already handled.
+export function mergeSuggestions(db, item, { exclude = [], limit = 6 } = {}) {
+  if (!item) return []
+  const skip = new Set([item.id, ...exclude])
+  return db.items
+    .filter((i) => !skip.has(i.id) && i.kind === item.kind)
+    .map((i) => ({ item: i, score: nameScore(item.name, i.name) }))
+    .filter((s) => s.score >= SUGGEST_MIN)
+    .sort((a, b) => b.score - a.score || a.item.name.length - b.item.name.length)
+    .slice(0, limit)
+}
+
+// The names a (possibly already-merged) item is known by on the shelf: its own
+// name plus every distinct `origName` its records carry. Shown when the user
+// expands a suggestion — a generic "beef burger" has to reveal the real
+// product names behind it for the merge decision to be an informed one.
+export function memberNames(db, item) {
+  const names = new Set([item.name])
+  for (const r of db.records) if (r.itemId === item.id && r.origName) names.add(r.origName)
+  return [...names]
+}
+
 // Suggested final name: the name of the item with the most records (the most
-// established one), ties broken by the shorter name.
-export function suggestName(items, recordCounts) {
-  return [...items]
-    .sort((a, b) => (recordCounts[b.id] ?? 0) - (recordCounts[a.id] ?? 0) || a.name.length - b.name.length)[0]
-    .name
+// established one), ties broken by the shorter name. An item that is already a
+// merge group (it has records logged under other names) wins outright — when
+// you merge a new product into an existing group, the group name is the
+// default, not the newcomer's.
+export function suggestName(items, recordCounts, groups = new Set()) {
+  return [...items].sort(
+    (a, b) =>
+      (groups.has(b.id) ? 1 : 0) - (groups.has(a.id) ? 1 : 0) ||
+      (recordCounts[b.id] ?? 0) - (recordCounts[a.id] ?? 0) ||
+      a.name.length - b.name.length,
+  )[0].name
+}
+
+// Ids of items that are already merge groups (some record was logged under a
+// different name). Used by suggestName to keep the group's name.
+export function groupIds(db) {
+  return new Set(db.records.filter((r) => r.origName).map((r) => r.itemId))
 }
 
 // The unit all comparable records will end up in, or null if they already

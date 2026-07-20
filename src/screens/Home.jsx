@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
 import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GROCERY_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import { ignoreItems } from '../lib/ignore'
-import { canMerge, mergeItems, suggestName, targetUnit } from '../lib/merge'
+import { canMerge, mergeItems, suggestName, targetUnit, groupIds } from '../lib/merge'
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo, isComparable } from '../lib/analysis'
 import { effectivePrice } from '../lib/cashback'
 import { addToRvList } from '../lib/rvlist'
@@ -310,7 +310,7 @@ export default function Home({ db, update, push }) {
           <button
             disabled={!(selectedItems.length >= 2 && canMerge(selectedItems))}
             title="Merge duplicates into one product"
-            onClick={() => setMergeName(suggestName(selectedItems, recordCounts))}
+            onClick={() => setMergeName(suggestName(selectedItems, recordCounts, groupIds(db)))}
           >
             🔗 Merge
           </button>

@@ -573,6 +573,34 @@ html[data-theme='dark'] .skeleton::after {
 .review-card .rc-grid .badge { font-size: 12px; padding: 5px 10px; background: var(--md-surface-container); color: var(--md-on-surface-variant); }
 .review-card img.rc-photo { width: 100%; max-height: 240px; object-fit: contain; border-radius: 12px; background: var(--md-surface-container); }
 
+/* ============ 🔗 merge suggestions (§15d) ============ */
+.ms-toggle {
+  display: block; width: 100%; text-align: left; margin: 0 0 10px;
+  background: none; border: none; padding: 4px 0;
+  font-size: 13px; font-weight: 700; color: var(--md-primary); cursor: pointer;
+}
+.merge-suggest { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.ms-row {
+  border: 1px solid var(--md-outline-variant); border-radius: 12px;
+  background: var(--md-surface-container-low); overflow: hidden;
+}
+.ms-row.on { border-color: var(--md-primary); background: var(--md-primary-container); }
+.ms-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.ms-head input[type='checkbox'] { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--md-primary); }
+.ms-name {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+  background: none; border: none; padding: 0; text-align: left; cursor: pointer; color: inherit;
+}
+.ms-name .t { font-weight: 700; font-size: 15px; }
+.ms-expand {
+  background: none; border: none; cursor: pointer; flex-shrink: 0;
+  font-size: 15px; color: var(--md-on-surface-variant); padding: 4px 6px;
+}
+.ms-members {
+  margin: 0; padding: 0 12px 10px 40px; font-size: 13px; line-height: 1.6;
+  list-style: disc; color: var(--md-on-surface-variant);
+}
+
 /* ============ sign-in ============ */
 .pin-screen {
   flex: 1; display: flex; flex-direction: column; justify-content: center;

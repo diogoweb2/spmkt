@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { fmtQty } from '../lib/units'
+import { fmtQty, unitKind } from '../lib/units'
 import { GROCERY_TYPE_LABEL } from '../lib/meat'
 import { photoUrl, removePhoto, applyEntry } from '../lib/photos'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
+import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
+import { SuggestionList, MergeNameDialog } from '../components/MergeSuggest'
 
 // 📷 Review — the photo-mode inbox (BUSINESS_RULES §15). Photos are captured
 // via the ➕ FAB's "Photo batch" action (§9b) and sit here as "pending" until
@@ -12,6 +14,9 @@ import { toast } from '../lib/toast'
 // visible, so the only decision is ✓ Approve or ✏️ Edit — no drilling into
 // items one by one.
 export default function Review({ db, update, push }) {
+  // Pending merge (§15d): { entry, ids, names, name } while the name dialog is
+  // open, after approving a card with look-alike products selected.
+  const [merge, setMerge] = useState(null)
   const queue = [...(db.photoQueue ?? [])].sort((a, b) => b.ts - a.ts)
   const ready = queue.filter((p) => p.status === 'ready')
   const pending = queue.filter((p) => p.status === 'pending')
@@ -20,9 +25,35 @@ export default function Review({ db, update, push }) {
   // Approving uses the shared applyEntry (src/lib/photos.js) — also used by
   // ⚡ Photo Live — run inside update()'s mutate so "Approve all" sees items
   // created by earlier entries in the same batch.
-  function approve(entry) {
-    update((d) => applyEntry(d, entry))
-    toast(`Saved ${entry.itemName} — $${entry.price}`)
+  // Approve with no merge picks: just apply. With picks, apply first (so the
+  // entry's item exists and carries its price) and then ask for the group name.
+  function approve(entry, picked = []) {
+    if (!picked.length) {
+      update((d) => applyEntry(d, entry))
+      toast(`Saved ${entry.itemName} — $${entry.price}`)
+      return
+    }
+    let itemId
+    update((d) => { itemId = applyEntry(d, entry) })
+    const items = [
+      db.items.find((i) => i.id === itemId) ?? { id: itemId, name: entry.itemName },
+      ...picked.map((id) => db.items.find((i) => i.id === id)),
+    ].filter(Boolean)
+    const counts = {}
+    for (const r of db.records) counts[r.itemId] = (counts[r.itemId] ?? 0) + 1
+    setMerge({
+      ids: [itemId, ...picked],
+      names: items.map((i) => i.name),
+      name: suggestName(items, counts, groupIds(db)),
+    })
+  }
+
+  function confirmMerge() {
+    const name = merge.name.trim()
+    if (!name) return
+    update((d) => mergeItems(d, merge.ids, name))
+    setMerge(null)
+    toast(`Merged into “${name}”`)
   }
 
   function approveAll() {
@@ -71,7 +102,7 @@ export default function Review({ db, update, push }) {
           key={entry.id}
           entry={entry}
           db={db}
-          onApprove={() => approve(entry)}
+          onApprove={(picked) => approve(entry, picked)}
           onEdit={() => push({ name: 'addPrice', storeId: entry.storeId, photoId: entry.id })}
           onDiscard={() => discard(entry)}
         />
@@ -109,16 +140,32 @@ export default function Review({ db, update, push }) {
           ))}
         </>
       )}
+
+      {merge && (
+        <MergeNameDialog
+          names={merge.names}
+          value={merge.name}
+          onChange={(name) => setMerge((m) => ({ ...m, name }))}
+          onCancel={() => setMerge(null)}
+          onConfirm={confirmMerge}
+        />
+      )}
     </div>
   )
 }
 
 function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
+  const [open, setOpen] = useState(false)
+  const [picked, setPicked] = useState([])
   const store = db.stores.find((s) => s.id === entry.storeId)
   const meat = entry.category === 'meat'
   const matched =
     db.items.find((i) => i.id === entry.matchedItemId) ??
     db.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
+  // Look-alike products for this extraction (§15d): compared against the
+  // matched item if there is one, otherwise the item this entry would create.
+  const probe = matched ?? { id: null, name: entry.itemName, kind: unitKind(entry.unit) }
+  const suggestions = mergeSuggestions(db, probe)
   return (
     <div className="card review-card">
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
@@ -145,10 +192,30 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
           : <span className="badge lvl-ok">new product</span>}
         {entry.note && <span className="badge">💬 {entry.note}</span>}
       </div>
+
+      {suggestions.length > 0 && (
+        <>
+          <button type="button" className="ms-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+            {open ? '▴' : '▾'} 🔗 {suggestions.length} similar product{suggestions.length === 1 ? '' : 's'}
+            {picked.length ? ` · ${picked.length} to merge` : ''}
+          </button>
+          {open && (
+            <SuggestionList
+              db={db}
+              suggestions={suggestions}
+              selected={picked}
+              onToggle={(id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))}
+            />
+          )}
+        </>
+      )}
+
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="icon-btn" aria-label="Discard" onClick={onDiscard}>🗑️</button>
         <button className="btn ghost" style={{ flex: 1 }} onClick={onEdit}>✏️ Edit</button>
-        <button className="btn" style={{ flex: 2 }} onClick={onApprove}>✓ Approve</button>
+        <button className="btn" style={{ flex: 2 }} onClick={() => onApprove(picked)}>
+          {picked.length ? `✓ Approve & merge (${picked.length + 1})` : '✓ Approve'}
+        </button>
       </div>
     </div>
   )

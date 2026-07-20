@@ -3,6 +3,8 @@ import { applyEntry, addPhoto } from '../lib/photos'
 import { GROCERY_TYPE_LABEL } from '../lib/meat'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
+import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
+import { SuggestionList, MergeNameDialog } from './MergeSuggest'
 
 const ALL_UNITS = ['kg', 'lb', 'g', 'oz', 'L', 'ml', 'un']
 
@@ -13,6 +15,30 @@ const ALL_UNITS = ['kg', 'lb', 'g', 'oz', 'L', 'ml', 'un']
 // ✏️ Edit hands off to the full AddPrice form (via a ready photoQueue entry);
 // a failure offers Retry or queueing the shot for the daily batch job.
 export default function LiveSheet({ db, update, live, onClose, onRetry, onEdit, onSaved }) {
+  // After ✓ Save: the id of the item just written, when look-alike products
+  // exist and the user still has to decide about merging (§15d).
+  const [mergeFor, setMergeFor] = useState(null)
+
+  // Saving hands off to the merge step when there is something to suggest;
+  // otherwise straight to the product page.
+  function afterSave(itemId) {
+    const item = db.items.find((i) => i.id === itemId)
+    const suggestions = item ? mergeSuggestions(db, item) : []
+    if (suggestions.length) setMergeFor(itemId)
+    else onSaved(itemId)
+  }
+
+  if (mergeFor) {
+    return (
+      <MergeStep
+        db={db}
+        update={update}
+        itemId={mergeFor}
+        onDone={(finalId) => { setMergeFor(null); onSaved(finalId) }}
+      />
+    )
+  }
+
   return (
     <div className="modal-backdrop sheet" onClick={onClose}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
@@ -28,8 +54,75 @@ export default function LiveSheet({ db, update, live, onClose, onRetry, onEdit, 
         )}
         {live.status === 'error' && <ErrorBody live={live} update={update} onClose={onClose} onRetry={onRetry} />}
         {live.status === 'ready' && (
-          <ReadyBody db={db} update={update} entry={live.entry} onClose={onClose} onEdit={onEdit} onSaved={onSaved} />
+          <ReadyBody db={db} update={update} entry={live.entry} onClose={onClose} onEdit={onEdit} onSaved={afterSave} />
         )}
+      </div>
+    </div>
+  )
+}
+
+// Step 2 of ⚡ Photo Live: "is this the same product as…?" (§15d). Pure
+// name-similarity suggestions — no AI. Skipping goes to the item just saved;
+// merging asks for the final name and then opens the merged group's page.
+function MergeStep({ db, update, itemId, onDone }) {
+  const item = db.items.find((i) => i.id === itemId)
+  const [picked, setPicked] = useState([])
+  const [name, setName] = useState(null) // non-null = naming dialog open
+  const suggestions = item ? mergeSuggestions(db, item) : []
+
+  if (!item) return null
+
+  function startMerge() {
+    const items = [item, ...picked.map((id) => db.items.find((i) => i.id === id))].filter(Boolean)
+    const counts = {}
+    for (const r of db.records) counts[r.itemId] = (counts[r.itemId] ?? 0) + 1
+    setName(suggestName(items, counts, groupIds(db)))
+  }
+
+  function confirm() {
+    const final = name.trim()
+    if (!final) return
+    // The saved item is first, so it keeps its id — the page we open next.
+    update((d) => mergeItems(d, [item.id, ...picked], final))
+    toast(`Merged into “${final}”`)
+    onDone(item.id)
+  }
+
+  if (name != null) {
+    return (
+      <MergeNameDialog
+        names={[item.name, ...picked.map((id) => db.items.find((i) => i.id === id)?.name).filter(Boolean)]}
+        value={name}
+        onChange={setName}
+        onCancel={() => setName(null)}
+        onConfirm={confirm}
+      />
+    )
+  }
+
+  return (
+    <div className="modal-backdrop sheet" onClick={() => onDone(item.id)}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-handle" />
+        <h2>🔗 Same product?</h2>
+        <p className="muted small" style={{ marginTop: -4 }}>
+          You already track products that look like <b>{item.name}</b>. Pick the ones that
+          are really the same thing — tap ▾ to see the names behind a group.
+        </p>
+        <SuggestionList
+          db={db}
+          suggestions={suggestions}
+          selected={picked}
+          onToggle={(id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))}
+        />
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <button className="btn ghost" style={{ flex: 1 }} onClick={() => onDone(item.id)}>
+            Keep separate
+          </button>
+          <button className="btn" style={{ flex: 2 }} disabled={!picked.length} onClick={startMerge}>
+            🔗 Merge {picked.length ? `(${picked.length + 1})` : ''}
+          </button>
+        </div>
       </div>
     </div>
   )
