@@ -21,6 +21,10 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   // expired flyer prices sink; expired rows are dimmed, or hidden entirely.
   const [histSort, setHistSort] = useState('price') // 'price' | 'date'
   const [hideExpired, setHideExpired] = useState(false)
+  // Filter the store list + history by brand/store text — one product often
+  // holds records from many brands (e.g. several tortilla-chip makers), so
+  // "doritos" narrows both boxes to just that name.
+  const [q, setQ] = useState('')
   const rvSent = useMemo(
     () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
     [db.rvSent],
@@ -73,9 +77,17 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const wu = db.displayWeightUnit ?? 'lb'
   const fmt = (n) => fmtDisplay(n, item.kind, wu)
 
+  const qn = q.trim().toLowerCase()
+  const matchRec = (rec) => {
+    if (!qn) return true
+    const store = db.stores.find((s) => s.id === rec.storeId)
+    return (rec.origName ?? '').toLowerCase().includes(qn) || (store?.name ?? '').toLowerCase().includes(qn)
+  }
+  const byStoreShown = byStore.filter((e) => matchRec(e.rec))
+
   const now = Date.now()
   const isExpired = (r) => r.validUntil != null && r.validUntil < now
-  const histRecs = hideExpired ? recs.filter((r) => !isExpired(r)) : [...recs]
+  const histRecs = (hideExpired ? recs.filter((r) => !isExpired(r)) : [...recs]).filter(matchRec)
   if (histSort === 'price') {
     histRecs.sort((a, b) => {
       const na = recordNorm(a, item, db)
@@ -189,6 +201,17 @@ export default function ItemDetail({ db, update, push, pop, view }) {
         </div>
       )}
 
+      {byStore.length > 1 && (
+        <div className="searchbar" style={{ marginBottom: 14 }}>
+          <input
+            type="search"
+            placeholder="Filter by brand or store…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
+      )}
+
       <div className="detail-grid">
         <div>
           {byStore.length > 0 && (
@@ -200,7 +223,8 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                 </p>
               )}
               <div className="list">
-                {byStore.map(({ store, rec, norm }, idx) => {
+                {byStoreShown.length === 0 && <p className="muted small">No prices match “{q.trim()}”.</p>}
+                {byStoreShown.map(({ store, rec, norm }) => {
                   const selected = compareSel.includes(store.id)
                   const sent = rvState[store.id] ?? (rvSent.has(`${item.id}|${rec.id}`) ? 'ok' : undefined)
                   return (
@@ -211,8 +235,9 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                     >
                       <div className="grow">
                         <div className="title">
-                          {selected ? '☑️ ' : idx === 0 && byStore.length > 1 ? '🏆 ' : ''}{store.name}
+                          {selected ? '☑️ ' : rec.id === byStore[0].rec.id && byStore.length > 1 ? '🏆 ' : ''}{store.name}
                         </div>
+                        {rec.origName && <div className="sub" style={{ fontStyle: 'italic' }}>“{rec.origName}”</div>}
                         <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))}{rec.minQty >= 2 ? ` · 🛒 buy ${rec.minQty}+` : ''} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? <> · <FlyerLink fi={flyerInfo(rec)} /></> : ''}</div>
                       </div>
                       <div className="right title">{fmt(norm)}</div>
@@ -227,6 +252,19 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                         }}
                       >
                         {{ pending: '…', ok: '✓', err: '!' }[sent] ?? '+'}
+                      </span>
+                      <span
+                        role="button"
+                        aria-label="Delete this price"
+                        className="icon-btn"
+                        style={{ width: 32, height: 32, fontSize: 15 }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteRecord(rec)
+                        }}
+                      >
+                        ✕
                       </span>
                     </button>
                   )

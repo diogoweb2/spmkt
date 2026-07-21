@@ -91,7 +91,9 @@ Compared **only against other records of the same item + variant**, using normal
 ## 5. "Where it's cheapest" (per product)
 
 - One row per store: that store's **latest** record for the item+variant, ranked by normalized price. 🏆 marks the cheapest.
+- Each row shows the record's original product name (`origName`, in quotes) under the store, plus a ✕ to delete that price (snackbar with Undo, §15b).
 - Rows are tappable: **pick any two prices** to compare — the Yearly impact card then compares exactly those two. A third tap replaces the older selection; switching variant tabs clears the selection.
+- When the product has >1 store row, a **search box filters both "Where it's cheapest" and History** by brand (`origName`) or store name — useful when one product bundles many brands. Filtering is display-only; best-ever/latest/savings still use the full record set.
 
 ## 6. Yearly impact (savings projection)
 
