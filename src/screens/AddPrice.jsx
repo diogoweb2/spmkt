@@ -227,6 +227,11 @@ export default function AddPrice({ db, update, push, pop, view }) {
         const rec = d.records.find((r) => r.id === editRec.id)
         const it = d.items.find((i) => i.id === itemId)
         const meat = category === 'meat'
+        // Rename in place: the Product field is editable in edit mode, so a
+        // typo'd name ("Chicken whole" → "Whole chicken") updates this item
+        // instead of spinning up a new one.
+        const newName = query.trim()
+        if (newName) it.name = newName
         it.category = category
         it.processing = meat ? processing : null
         // Unit is editable here, so a wrong kind picked at creation ("un" on a
@@ -364,6 +369,10 @@ export default function AddPrice({ db, update, push, pop, view }) {
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
+            // Edit mode is a rename-in-place: keep the form (and the item we're
+            // editing) put — the new text is saved onto the item, not treated
+            // as a search for a different/new product.
+            if (editRec) return
             setItem(null)
             setCreating(false)
           }}
