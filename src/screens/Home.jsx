@@ -49,8 +49,11 @@ function lastBuyDelta(db, d) {
 export default function Home({ db, update, push }) {
   const [view, setView] = useSessionState('home.view', 'deals') // 'deals' | 'items'
   const [showExpired, setShowExpired] = useSessionState('home.showExpired', false)
-  const [mode, setMode] = useSessionState('home.mode', 'meat')
+  const [mode, setMode] = useSessionState('home.mode', 'all') // 'all' | 'meat' | 'grocery'
+  const all = mode === 'all'
   const meat = mode === 'meat'
+  const showMeat = all || meat
+  const showGrocery = all || mode === 'grocery'
   const [ratingsOn, setRatingsOn] = useSessionState('home.ratingsOn', () => new Set(['excellent', 'good']), { set: true })
   const [storesOff, setStoresOff] = useSessionState('home.storesOff', () => new Set(), { set: true })
   const [typesOff, setTypesOff] = useSessionState('home.typesOff', () => new Set(), { set: true })
@@ -73,7 +76,8 @@ export default function Home({ db, update, push }) {
 
   const groups = useMemo(() => meatDeals(db, { includeExpired: showExpired }), [db, showExpired])
   const grocery = useMemo(() => groceryDeals(db, { includeExpired: showExpired }), [db, showExpired])
-  const allDeals = meat ? MEAT_TYPES.flatMap((t) => groups[t] ?? []) : grocery
+  const meatFlat = MEAT_TYPES.flatMap((t) => groups[t] ?? [])
+  const allDeals = all ? [...meatFlat, ...grocery] : meat ? meatFlat : grocery
   const currentStore = db.stores.find((s) => s.id === db.currentStoreId)
 
   // ---------- RV Groceries send (unchanged behavior) ----------
@@ -128,11 +132,11 @@ export default function Home({ db, update, push }) {
     !storesOff.has(d.store.id) &&
     (d.rating == null || ratingsOn.has(d.rating)) &&
     (!qNorm || d.item.name.toLowerCase().includes(qNorm)) &&
-    (meat
+    (d.isMeat
       ? proc === 'all' || (proc === 'ultra') === d.ultra
       : !catsOff.has(d.gtype))
 
-  const groceryCats = meat ? [] : GROCERY_TYPES.filter((t) => grocery.some((d) => d.gtype === t))
+  const groceryCats = showGrocery ? GROCERY_TYPES.filter((t) => grocery.some((d) => d.gtype === t)) : []
 
   const dealScore = (d) => (d.item.market ? d.norm / d.item.market.avg : Infinity)
   const cmp = {
@@ -141,7 +145,7 @@ export default function Home({ db, update, push }) {
     name: (a, b) => a.item.name.localeCompare(b.item.name),
   }[sort]
 
-  const sections = meat
+  const meatSections = showMeat
     ? MEAT_TYPES.flatMap((t) => {
         if (typesOff.has(t)) return []
         const list = (groups[t] ?? []).filter(show).sort(cmp)
@@ -152,10 +156,14 @@ export default function Home({ db, update, push }) {
         if (ultra.length) out.push({ key: `${t}-ultra`, label: `${MEAT_TYPE_LABEL[t]} · ultra-processed`, list: ultra })
         return out
       })
-    : GROCERY_TYPES.flatMap((t) => {
+    : []
+  const grocerySections = showGrocery
+    ? GROCERY_TYPES.flatMap((t) => {
         const list = grocery.filter((d) => d.gtype === t && show(d)).sort(cmp)
-        return list.length ? [{ key: t, label: GROCERY_TYPE_LABEL[t], list }] : []
+        return list.length ? [{ key: `g-${t}`, label: GROCERY_TYPE_LABEL[t], list }] : []
       })
+    : []
+  const sections = [...meatSections, ...grocerySections]
 
   // ---------- All items rows (the old Items tab, folded in) ----------
   const itemRows = useMemo(() => {
@@ -184,15 +192,17 @@ export default function Home({ db, update, push }) {
   // ---------- selection helpers ----------
   const deals = view === 'deals'
 
-  // Deals view selection is per item (an item's normal + by-piece rows toggle
-  // together); All items view is per item+variant row.
+  // Deals view selection is per deal row (keyed by the deal's own key, so an
+  // item's comparable row and its by-piece row select independently, and the
+  // same product from two stores stays separate); All items view is per
+  // item+variant row.
   const selectedDeals = useMemo(() => {
     if (!deals) return []
     const seen = new Set()
     const out = []
     for (const d of allDeals) {
-      if (selected.includes(d.item.id) && !seen.has(d.item.id)) {
-        seen.add(d.item.id)
+      if (selected.includes(d.key) && !seen.has(d.key)) {
+        seen.add(d.key)
         out.push(d)
       }
     }
@@ -211,7 +221,7 @@ export default function Home({ db, update, push }) {
 
   // Compare needs ≥2 comparable same-kind entries.
   const compareRows = deals
-    ? selectedDeals.filter((d) => !d.byPiece).map((d) => ({ item: d.item, variant: null, label: '', key: d.item.id }))
+    ? selectedDeals.filter((d) => !d.byPiece).map((d) => ({ item: d.item, variant: null, label: '', key: d.key }))
     : selectedRows.filter((r) => r.recs.length && pricesByStore(db, r.item.id, r.variant).length)
   const compareOk =
     compareRows.length >= 2 &&
@@ -219,7 +229,7 @@ export default function Home({ db, update, push }) {
     compareRows.every((r) => r.item.kind === compareRows[0].item.kind)
 
   function rowKey(x) {
-    return deals ? x.item.id : x.key
+    return x.key
   }
 
   function toggleSelect(x) {
@@ -367,9 +377,10 @@ export default function Home({ db, update, push }) {
       {deals && (
         <>
           <Chips style={{ marginBottom: 8 }}>
+            <button className={`no-check${all ? ' on' : ''}`} onClick={() => setMode('all')}>🗂️ All</button>
             <button className={`no-check${meat ? ' on' : ''}`} onClick={() => setMode('meat')}>🥩 Meat</button>
-            <button className={`no-check${meat ? '' : ' on'}`} onClick={() => setMode('grocery')}>🛒 Groceries</button>
-            {meat && (
+            <button className={`no-check${mode === 'grocery' ? ' on' : ''}`} onClick={() => setMode('grocery')}>🛒 Groceries</button>
+            {showMeat && (
               <button
                 className="no-check"
                 style={{ marginLeft: 'auto' }}
@@ -393,7 +404,7 @@ export default function Home({ db, update, push }) {
             ))}
           </Chips>
 
-          {meat && (
+          {showMeat && MEAT_TYPES.some((t) => groups[t]?.length) && (
             <Chips style={{ marginBottom: 8 }}>
               <button className="no-check" aria-label="Clear meat type selection" onClick={() => setTypesOff(new Set(MEAT_TYPES))}>✕</button>
               <button className="no-check" aria-label="Select all meat types" onClick={() => setTypesOff(new Set())}>All</button>
@@ -404,7 +415,7 @@ export default function Home({ db, update, push }) {
               ))}
             </Chips>
           )}
-          {!meat && groceryCats.length > 1 && (
+          {showGrocery && groceryCats.length > 1 && (
             <Chips style={{ marginBottom: 8 }}>
               <button className="no-check" aria-label="Clear category selection" onClick={() => setCatsOff(new Set(GROCERY_TYPES))}>✕</button>
               <button className="no-check" aria-label="Select all categories" onClick={() => setCatsOff(new Set())}>All</button>
@@ -446,7 +457,7 @@ export default function Home({ db, update, push }) {
           {sections.length === 0 && (
             <div className="empty" style={{ padding: 32 }}>
               <div className="ico">🏷️</div>
-              No {meat ? 'meat' : 'grocery'} deals match the filters.
+              No {all ? '' : meat ? 'meat ' : 'grocery '}deals match the filters.
               <div className="sub small" style={{ marginTop: 6 }}>
                 {meat
                   ? 'Deals appear here after the weekly flyer import finds prices below the usual Toronto market price.'
@@ -461,7 +472,7 @@ export default function Home({ db, update, push }) {
                 {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
                 <div className="card list" style={{ padding: '2px 12px' }}>
                   {list.map((d) => {
-                    const isSel = selected.includes(d.item.id)
+                    const isSel = selected.includes(d.key)
                     const delta = lastBuyDelta(db, d)
                     return (
                       <button

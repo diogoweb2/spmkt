@@ -140,6 +140,7 @@ export function meatDeals(db, { includeExpired = false } = {}) {
         // by-piece prices can't be rated against $/lb market thresholds
         rating: best.byPiece ? null : dealRating(item, best.norm),
         ultra: item.processing === 'ultra',
+        isMeat: true,
       })
     }
   }
@@ -162,7 +163,7 @@ export function groceryDeals(db, { includeExpired = false } = {}) {
     if (item.category === 'meat') continue
     const gtype = GROCERY_TYPES.includes(item.groceryType) ? item.groceryType : 'other'
     for (const best of bestDeals(db, item, now, includeExpired)) {
-      out.push({ ...best, gtype, rating: best.byPiece ? null : dealRating(item, best.norm), ultra: false })
+      out.push({ ...best, gtype, rating: best.byPiece ? null : dealRating(item, best.norm), ultra: false, isMeat: false })
     }
   }
   out.sort((a, b) => a.norm - b.norm)
