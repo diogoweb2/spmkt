@@ -180,6 +180,50 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
       log(`  skip "${p.name}": unit ${p.unit} incompatible with item kind ${item.kind}`)
       continue
     }
+    const flyerPage = Number.isInteger(p.page) && p.page >= 1 && p.page <= pageCount ? p.page : null
+    const origName =
+      typeof p.origName === 'string' && p.origName.trim() && p.origName.trim().toLowerCase() !== item.name.trim().toLowerCase()
+        ? p.origName.trim()
+        : null
+    // `un` means no size was found in the flyer text OR the product image — the
+    // extractor's last resort (§12). Rather than silently save a comparison-less
+    // price, park it in the Review inbox (photoQueue, status 'ready') with the
+    // ad linked, so the user can add the real weight before it lands. Dedupe by
+    // item+store+week covers both records and already-queued flyer entries.
+    if (p.unit === 'un') {
+      const already =
+        db.records.some((r) => r.source === 'flyer' && r.itemId === item.id && r.storeId === store.id && r.ts > weekAgo) ||
+        (db.photoQueue ?? []).some((q) => q.source === 'flyer' && q.matchedItemId === item.id && q.storeId === store.id && q.ts > weekAgo)
+      if (already) continue
+      db.photoQueue ??= []
+      db.photoQueue.push({
+        id: uid('p'),
+        path: null,
+        storeId: store.id,
+        status: 'ready',
+        ts: Date.now(),
+        itemName: item.name,
+        matchedItemId: item.id,
+        price: p.price,
+        qty: p.qty,
+        unit: 'un',
+        category: isMeat ? 'meat' : 'other',
+        frozen: isMeat ? !!p.frozen : null,
+        bones: isMeat ? !!p.bones : null,
+        skin: isMeat ? !!p.skin : null,
+        processing: null,
+        groceryType: isMeat ? null : (item.groceryType ?? null),
+        minQty: Number.isInteger(p.minQty) && p.minQty >= 2 ? p.minQty : null,
+        note: 'No weight in the ad — add the real size, or approve as-is.',
+        origName,
+        source: 'flyer',
+        validUntil: validUntil ?? null,
+        flyerUrl: flyerUrl ?? null,
+        flyerPage,
+      })
+      added++
+      continue
+    }
     const rec = {
       id: uid('r'),
       itemId: item.id,
@@ -193,10 +237,7 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
       ts: Date.now(),
       // Flyer's literal product name, kept only when it differs from the item
       // name (which may be a generic/db name grouping similar products).
-      origName:
-        typeof p.origName === 'string' && p.origName.trim() && p.origName.trim().toLowerCase() !== item.name.trim().toLowerCase()
-          ? p.origName.trim()
-          : null,
+      origName,
       // Multi-buy deals ("2/$2.50"): price is per item, minQty = how many the
       // shopper must buy to get it. Indicator only — comparisons are unchanged.
       minQty: Number.isInteger(p.minQty) && p.minQty >= 2 ? p.minQty : null,
@@ -205,7 +246,7 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
       // The app links the 📰 badge to the flyer site — #p=<page> when the
       // extraction reported which page the deal was on, plain URL otherwise.
       flyerUrl: flyerUrl ?? null,
-      flyerPage: Number.isInteger(p.page) && p.page >= 1 && p.page <= pageCount ? p.page : null,
+      flyerPage,
     }
     // Dedupe: flyers are weekly, so at most one flyer record per item+store
     // per week — extraction can vary run to run (names, meat classification),

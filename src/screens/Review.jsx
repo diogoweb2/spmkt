@@ -6,6 +6,8 @@ import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
 import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
 import { SuggestionList, MergeNameDialog } from '../components/MergeSuggest'
+import { flyerInfo } from '../lib/analysis'
+import FlyerLink from '../components/FlyerLink'
 
 // 📷 Review — the photo-mode inbox (BUSINESS_RULES §15). Photos are captured
 // via the ➕ FAB's "Photo batch" action (§9b) and sit here as "pending" until
@@ -86,8 +88,9 @@ export default function Review({ db, update, push }) {
           <div className="ico">📷</div>
           Nothing to review.
           <div className="sub small" style={{ marginTop: 8, lineHeight: 1.5 }}>
-            In a store, tap ➕ → 📷 Photo batch to snap shelf labels.
-            The daily 9:20 job reads them and the extracted prices show up here to approve.
+            In a store, tap ➕ → 📷 Photo batch to snap shelf labels — the daily 9:20 job
+            reads them and the prices show up here. Flyer deals with no weight in the ad
+            (📰) land here too, so you can add the real size before saving.
           </div>
         </div>
       )}
@@ -167,6 +170,10 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
   // matched item if there is one, otherwise the item this entry would create.
   const probe = matched ?? { id: null, name: entry.itemName, kind: unitKind(entry.unit) }
   const suggestions = mergeSuggestions(db, probe)
+  // Where this card came from: 📷 a shelf photo, or 📰 the weekly flyer import
+  // (an unsized `un` deal parked here to have its weight added, §12). Flyer
+  // entries carry the ad link (with page) via flyerInfo, exactly like a record.
+  const fi = flyerInfo(entry)
   return (
     <div className="card review-card">
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
@@ -184,6 +191,9 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
           </span>
         )}
         <span className="badge">{new Date(entry.ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+        {fi
+          ? <FlyerLink fi={fi} className={`badge ${fi.valid ? 'lvl-ok' : ''}`} />
+          : <span className="badge">📷 photo</span>}
         <span className="badge">{meat ? '🥩 Meat' : GROCERY_TYPE_LABEL[entry.groceryType] ?? '📦 Other'}</span>
         {meat && <span className="badge">{entry.frozen ? '❄️ frozen' : '🥩 fresh'}</span>}
         {meat && <span className="badge">{entry.bones ? '🦴 bone-in' : 'boneless'}</span>}

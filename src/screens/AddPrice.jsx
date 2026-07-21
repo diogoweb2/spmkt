@@ -74,7 +74,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
   // types manually. Behaves exactly like a flyer deal: expires on that date and
   // shows the 📰 badge. Stored as a yyyy-mm-dd string in the date input.
   const [until, setUntil] = useState(() => {
-    const v = editRec?.validUntil
+    const v = editRec?.validUntil ?? photoEntry?.validUntil
     return v ? new Date(v).toISOString().slice(0, 10) : ''
   })
   // Optional multi-buy minimum ("2/$2.50" deals): the price is per item, but
@@ -181,6 +181,16 @@ export default function AddPrice({ db, update, push, pop, view }) {
         // A user-typed "until <date>" makes this a limited-time price that
         // expires and shows the 📰 badge — same handling as a flyer deal.
         ...(validUntil ? { source: 'flyer', validUntil } : {}),
+        // A flyer-sourced review entry (an unsized `un` deal parked for its
+        // weight, §12) keeps its ad link and shelf name when saved from here.
+        ...(photoEntry?.source === 'flyer'
+          ? {
+              source: 'flyer',
+              flyerUrl: photoEntry.flyerUrl ?? null,
+              flyerPage: photoEntry.flyerPage ?? null,
+              ...(photoEntry.origName && photoEntry.origName.toLowerCase() !== query.trim().toLowerCase() ? { origName: photoEntry.origName } : {}),
+            }
+          : {}),
       })
       if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
     })

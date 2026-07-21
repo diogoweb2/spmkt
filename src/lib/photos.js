@@ -87,6 +87,11 @@ export function applyEntry(d, entry, newId = null) {
     }
     d.items.push(item)
   }
+  // Flyer-sourced review entries (§12: unsized `un` imports parked for the user
+  // to add a weight) keep their flyer provenance — source, validity window and
+  // the linked ad page — so an approved record is indistinguishable from a
+  // direct flyer import. Everything else is a photo capture.
+  const flyer = entry.source === 'flyer'
   d.records.push({
     id: uid('r'),
     itemId: item.id,
@@ -99,8 +104,16 @@ export function applyEntry(d, entry, newId = null) {
     skin: meat ? !!entry.skin : null,
     // Multi-buy price (§1): must buy N to get this per-item price.
     ...(Number.isInteger(entry.minQty) && entry.minQty >= 2 ? { minQty: entry.minQty } : {}),
+    ...(flyer
+      ? {
+          ...(entry.origName && entry.origName.toLowerCase() !== item.name.toLowerCase() ? { origName: entry.origName } : {}),
+          source: 'flyer',
+          validUntil: entry.validUntil ?? null,
+          flyerUrl: entry.flyerUrl ?? null,
+          flyerPage: entry.flyerPage ?? null,
+        }
+      : { source: 'photo' }),
     ts: entry.ts,
-    source: 'photo',
   })
   d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== entry.id)
   return item.id
