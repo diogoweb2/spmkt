@@ -170,6 +170,7 @@ Compared **only against other records of the same item + variant**, using normal
 - **Home** is the single browse surface: a 🏷️ **Deals** / 📋 **All items** switch (session-persisted). Deals is the deals page (§13) with the 🗂️ All / 🥩 Meat / 🛒 Groceries mode chips (default All); All items is §9. When there are no qualifying deals it shows an empty state explaining deals come from the weekly flyer import.
 - **The Location tab was removed.** The store grid lives in the "Where are you?" bottom sheet (§9), opened from Home's 📍 store chip or wherever a store is needed. Known chains show their bundled logo on a white chip over the brand color (`src/lib/logos.js`, matched loosely by name); unknown stores show their name with a logged-price count; the current store is outlined. "+ Add store" creates a store (default unit lb) and selects it. Stores can also be added in Settings → Stores.
 - **"vs last" delta badge**: a deal row whose item has an older comparable record shows ▼/▲ n% against that previous price (hidden under 3% — noise). Complements the market-threshold rating badges with the user's own history.
+- **`#rank` history badge**: a deal row whose item has **≥ 2 comparable records** shows a pill in the **top-right corner** giving the current price's rank within the item's price history (1 = cheapest ever; `#1` adds 🎉). Color by rank: **green top 3**, **amber 4–9**, **red 10+**. By-piece rows and single-record items show nothing. Code: `priceRank`/`rankColor` in `src/screens/Home.jsx`.
 
 ## 11. Bugs & ideas (Settings)
 

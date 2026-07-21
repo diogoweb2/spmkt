@@ -46,6 +46,25 @@ function lastBuyDelta(db, d) {
   return pct
 }
 
+// Rank of this deal's price within the item's comparable price history
+// (1 = cheapest ever). Returns null when there is only one comparable
+// record (nothing to rank against).
+function priceRank(db, d) {
+  if (d.byPiece || d.norm == null) return null
+  const norms = itemRecords(db, d.item.id)
+    .filter((r) => isComparable(d.item, r) && recordNorm(r, d.item, db) != null)
+    .map((r) => recordNorm(r, d.item, db))
+  if (norms.length < 2) return null
+  const rank = 1 + norms.filter((n) => n < d.norm - 1e-9).length
+  return { rank, total: norms.length }
+}
+
+function rankColor(rank) {
+  if (rank <= 3) return 'var(--accent)'
+  if (rank <= 9) return 'var(--amber)'
+  return 'var(--red)'
+}
+
 export default function Home({ db, update, push }) {
   const [view, setView] = useSessionState('home.view', 'deals') // 'deals' | 'items'
   const [showExpired, setShowExpired] = useSessionState('home.showExpired', false)
@@ -474,6 +493,7 @@ export default function Home({ db, update, push }) {
                   {list.map((d) => {
                     const isSel = selected.includes(d.key)
                     const delta = lastBuyDelta(db, d)
+                    const pr = priceRank(db, d)
                     return (
                       <button
                         key={d.key}
@@ -519,6 +539,15 @@ export default function Home({ db, update, push }) {
                             )}
                           </div>
                         </div>
+                        {pr && (
+                          <span
+                            className="price-rank"
+                            style={{ color: rankColor(pr.rank), borderColor: rankColor(pr.rank) }}
+                            title={`#${pr.rank} cheapest of ${pr.total} prices in history`}
+                          >
+                            #{pr.rank}{pr.rank === 1 ? '🎉' : ''}
+                          </span>
+                        )}
                         <div className="right">
                           <div className="title">{fmtDisplay(d.norm, d.byPiece ? 'count' : d.item.kind, db.displayWeightUnit)}</div>
                           {d.byPiece && <span className="badge lvl-ok">📦 by piece</span>}
