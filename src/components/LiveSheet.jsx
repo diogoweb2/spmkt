@@ -70,9 +70,21 @@ function MergeStep({ db, update, probe, onDone }) {
   // `probe` is the item just saved — the real one from db when it already
   // existed, otherwise a stand-in {id, name, kind} for the item being created.
   const item = db.items.find((i) => i.id === probe.id) ?? probe
-  const [picked, setPicked] = useState([])
-  const [name, setName] = useState(null) // non-null = naming dialog open
   const suggestions = mergeSuggestions(db, item)
+  const [name, setName] = useState(null) // non-null = naming dialog open
+  // Auto-select the obvious merges so the common case is a single tap — the
+  // user can uncheck any before merging (§15d). Existing merge GROUPS win: if a
+  // suggestion is already a group, route into it. Otherwise pre-check only
+  // high-confidence single items (≥ 0.8) — a plausible new group; weaker (0.5+)
+  // matches are shown but left unchecked so a real decision is still made.
+  const [picked, setPicked] = useState(() => {
+    const groups = groupIds(db)
+    const auto = new Set()
+    const bestGroup = suggestions.find((s) => groups.has(s.item.id))
+    if (bestGroup) auto.add(bestGroup.item.id)
+    for (const s of suggestions) if (!groups.has(s.item.id) && s.score >= 0.8) auto.add(s.item.id)
+    return [...auto]
+  })
 
   function startMerge() {
     const items = [item, ...picked.map((id) => db.items.find((i) => i.id === id))].filter(Boolean)
@@ -108,8 +120,11 @@ function MergeStep({ db, update, probe, onDone }) {
         <div className="sheet-handle" />
         <h2>🔗 Same product?</h2>
         <p className="muted small" style={{ marginTop: -4 }}>
-          You already track products that look like <b>{item.name}</b>. Pick the ones that
-          are really the same thing — tap ▾ to see the names behind a group.
+          You already track products that look like <b>{item.name}</b>.
+          {picked.length
+            ? ' The likely match is pre-selected — uncheck it if it\'s wrong, or add more. '
+            : ' Pick the ones that are really the same thing. '}
+          Tap ▾ to see the names behind a group.
         </p>
         <SuggestionList
           db={db}
