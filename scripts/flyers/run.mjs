@@ -82,7 +82,7 @@ async function downloadPages(store, dir) {
 
 // All of a flyer's pages go into ONE call: the system prompt, the rules and
 // the db item names are paid once per store instead of once per page.
-const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist) => `Use the Read tool to open ${imgPaths.length === 1 ? 'this image file' : `these ${imgPaths.length} image files, one by one`} — they are the pages of one supermarket flyer and you CAN view images via the Read tool:
+const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist, groups = []) => `Use the Read tool to open ${imgPaths.length === 1 ? 'this image file' : `these ${imgPaths.length} image files, one by one`} — they are the pages of one supermarket flyer and you CAN view images via the Read tool:
 ${imgPaths.join('\n')}
 
 Extract every grocery deal from ALL pages combined. Output ONLY a single JSON array (no prose, no markdown fence). If the same product appears on more than one page, output it once. Each element:
@@ -103,7 +103,8 @@ Rules:
 - Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip anything that is not a grocery product you'd buy to eat or use in the kitchen/home: store banners, event ads, store hours, loyalty-points promos with no concrete product price, toys, clothing, electronics, kitchenware, pet food, garden. If the page turns out to be a pure advertisement with no priced groceries, return an empty array [].
 - If a price is unreadable, skip that product.${existingNames.length ? `
-- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation; origName still keeps the flyer's own wording: ${JSON.stringify(existingNames)}` : ''}${ignoredNames.length ? `
+- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation; origName still keeps the flyer's own wording: ${JSON.stringify(existingNames)}` : ''}${groups.length ? `
+- MERGE GROUPS — the user groups similar products under one shared name so they compare side by side. Each group below lists its shared "name" and example shelf products already inside it. If a flyer product clearly belongs to a group (same product category as its members — e.g. any potato/tortilla chips -> a "Chips" group; any cheese -> a "Cheese" group; any yogurt -> a "Yogurt" group), set "name" to the group's EXACT shared name and keep the flyer's own wording in origName. Only route into a group when the product genuinely fits it; when unsure, use a normal specific name instead. Groups: ${JSON.stringify(groups)}` : ''}${ignoredNames.length ? `
 - IGNORED PRODUCTS — the user deleted these and never wants to see them again: ${JSON.stringify(ignoredNames)}
   Each name is an EXAMPLE of a product type, not a string to match on. Work out what the product actually IS — its generic type, dropping the brand, the size and any qualifier — then omit every flyer product of that type, whatever its brand or variety.
   · "Royale Bathroom Tissue" -> the type is bathroom tissue: omit all bathroom tissue, any brand.
@@ -118,10 +119,10 @@ Rules:
   Meat/fish/poultry (category "meat") are EXEMPT: always include them regardless of the whitelist.
   If an IGNORED PRODUCTS rule above conflicts with the whitelist, the ignore wins: an ignored product type stays out.` : ''}`
 
-function extractProducts(imgPaths, storeName, existingNames, ignoredNames, whitelist) {
+function extractProducts(imgPaths, storeName, existingNames, ignoredNames, whitelist, groups = []) {
   const claude = findClaude()
   log(`${storeName}: extracting ${imgPaths.length} page${imgPaths.length === 1 ? '' : 's'} with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPaths, existingNames, ignoredNames, whitelist), '--allowedTools', 'Read', '--model', 'claude-haiku-4-5'], {
+  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPaths, existingNames, ignoredNames, whitelist, groups), '--allowedTools', 'Read', '--model', 'claude-haiku-4-5'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     timeout: 30 * 60 * 1000,
@@ -278,6 +279,7 @@ for (const store of stores) {
   const imgs = []
   try {
     let existingNames = []
+    let groups = []
     let ignoredNames = []
     let whitelist = []
     if (!DRY_RUN) {
@@ -293,6 +295,17 @@ for (const store of stores) {
         continue
       }
       existingNames = db?.items?.map((i) => i.name) ?? []
+      // Merge groups: items that already fold several shelf names together
+      // (records with an origName). Passed to the extractor so a new flyer
+      // product of the same kind routes INTO the group by reusing its name,
+      // instead of spawning a near-duplicate item (§12 auto-grouping).
+      groups = (db?.items ?? [])
+        .map((i) => ({
+          name: i.name,
+          members: [...new Set((db.records ?? []).filter((r) => r.itemId === i.id && r.origName).map((r) => r.origName))],
+        }))
+        .filter((g) => g.members.length)
+        .map((g) => ({ name: g.name, members: g.members.slice(0, 10) }))
       ignoredNames = db?.ignored?.map((g) => g.name) ?? []
       // Import whitelist (Settings): only active when toggled on AND non-empty
       // — never lets an empty list silently import nothing. Meat is exempt.
@@ -303,7 +316,7 @@ for (const store of stores) {
     // One Claude call per store, all pages at once (token efficiency). Any
     // cross-page or re-run duplicates are handled by insertProducts'
     // one-flyer-record-per-item+store-per-week dedupe.
-    const products = extractProducts(dl.files, store.name, existingNames, ignoredNames, whitelist)
+    const products = extractProducts(dl.files, store.name, existingNames, ignoredNames, whitelist, groups)
     log(`${store.name}: extracted ${products.length} products from ${dl.files.length} pages`)
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))

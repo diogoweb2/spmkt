@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { mergedMembers, unmergeName } from '../lib/merge'
 import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
   variantKey, variantLabel, flyerInfo, isComparable,
@@ -25,6 +26,13 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   // holds records from many brands (e.g. several tortilla-chip makers), so
   // "doritos" narrows both boxes to just that name.
   const [q, setQ] = useState('')
+  // Rename the item/group (the LLM's flyer-import name is often not what the
+  // user would call it). Inline input toggled by the ✏️ next to the title.
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  // Full-screen 🎉 when the price just saved is the best ever — a hit of
+  // motivation to keep hunting deals. Shown once per arrival, then dismissed.
+  const [celebrated, setCelebrated] = useState(false)
   const rvSent = useMemo(
     () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
     [db.rvSent],
@@ -73,6 +81,9 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const picked = byStore.filter((e) => compareSel.includes(e.store.id))
   const pair = picked.length === 2 ? [...picked].sort((a, b) => a.norm - b.norm) : null
   const pairSavings = pair ? yearlySavings(item, pair[1].norm, pair[0].norm) : 0
+
+  // Shelf names folded into this group — each can be split back out.
+  const members = mergedMembers(db, item.id)
 
   const wu = db.displayWeightUnit ?? 'lb'
   const fmt = (n) => fmtDisplay(n, item.kind, wu)
@@ -148,15 +159,51 @@ export default function ItemDetail({ db, update, push, pop, view }) {
       <div className="topbar">
         <button className="back" onClick={pop}>‹</button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ whiteSpace: 'normal' }}>
-            {item.name}
-            {(() => {
-              const fi = flyerInfo(latest)
-              return fi && (
-                <FlyerLink fi={fi} className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 8, fontSize: 11, verticalAlign: 'middle' }} />
-              )
-            })()}
-          </h1>
+          {editingName ? (
+            <form
+              style={{ display: 'flex', gap: 6, alignItems: 'center' }}
+              onSubmit={(e) => {
+                e.preventDefault()
+                const name = nameDraft.trim()
+                if (name && name !== item.name) {
+                  update((d) => {
+                    const it = d.items.find((i) => i.id === item.id)
+                    if (it) it.name = name
+                  })
+                }
+                setEditingName(false)
+              }}
+            >
+              <input
+                autoFocus
+                className="grow"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                style={{ fontSize: 18, fontWeight: 700, padding: '6px 10px' }}
+                aria-label="Product name"
+              />
+              <button type="submit" className="btn small tonal">Save</button>
+              <button type="button" className="btn small ghost" onClick={() => setEditingName(false)}>✕</button>
+            </form>
+          ) : (
+            <h1 style={{ whiteSpace: 'normal' }}>
+              {item.name}
+              <button
+                className="icon-btn"
+                aria-label="Rename product"
+                style={{ width: 30, height: 30, fontSize: 14, marginLeft: 6, verticalAlign: 'middle' }}
+                onClick={() => { setNameDraft(item.name); setEditingName(true) }}
+              >
+                ✏️
+              </button>
+              {(() => {
+                const fi = flyerInfo(latest)
+                return fi && (
+                  <FlyerLink fi={fi} className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 8, fontSize: 11, verticalAlign: 'middle' }} />
+                )
+              })()}
+            </h1>
+          )}
           <span className="muted small">
             prices shown per {displayUnitLabel(item.kind, wu)} · <PhotoLink name={item.name} />
           </span>
@@ -305,6 +352,37 @@ export default function ItemDetail({ db, update, push, pop, view }) {
             </div>
           )}
 
+          {members.length > 0 && (
+            <div className="card">
+              <h2>Grouped products</h2>
+              <p className="muted small" style={{ marginTop: -6, marginBottom: 6 }}>
+                Shelf names merged into “{item.name}”. Split one back into its own product with ⤴.
+              </p>
+              <div className="list">
+                {members.map(({ origName, count }) => (
+                  <div key={origName} className="row" style={{ cursor: 'default' }}>
+                    <div className="grow">
+                      <div className="title small" style={{ fontSize: 14, fontStyle: 'italic' }}>“{origName}”</div>
+                      <div className="sub">{count} price{count === 1 ? '' : 's'}</div>
+                    </div>
+                    <button
+                      className="icon-btn"
+                      aria-label={`Split "${origName}" back into its own product`}
+                      title="Un-merge into its own product"
+                      style={{ width: 34, height: 34, fontSize: 16 }}
+                      onClick={() => {
+                        update((d) => unmergeName(d, item.id, origName))
+                        toast(`“${origName}” is its own product again`)
+                      }}
+                    >
+                      ⤴
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <MonthlyChart recs={recs} item={item} kind={item.kind} weightUnit={wu} db={db} />
         </div>
 
@@ -385,6 +463,43 @@ export default function ItemDetail({ db, update, push, pop, view }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {view.fromSave && v?.level === 'best' && !celebrated && (
+        <Celebration price={best != null ? fmt(best).split(' / ')[0] : null} onClose={() => setCelebrated(true)} />
+      )}
+    </div>
+  )
+}
+
+// Full-screen 🎉 shown when a just-saved price is the best ever. Auto-dismisses
+// after a few seconds or on tap. Motivation to keep finding deals (§4).
+function Celebration({ price, onClose }) {
+  useEffect(() => {
+    navigator.vibrate?.([20, 60, 20])
+    const t = setTimeout(onClose, 4000)
+    return () => clearTimeout(t)
+  }, [onClose])
+  const confetti = Array.from({ length: 40 })
+  return (
+    <div className="celebrate" onClick={onClose} role="button" aria-label="Dismiss">
+      <div className="confetti">
+        {confetti.map((_, i) => (
+          <span
+            key={i}
+            style={{
+              left: `${(i * 100) / confetti.length}%`,
+              animationDelay: `${(i % 10) * 0.18}s`,
+              background: ['#16a34a', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'][i % 5],
+            }}
+          />
+        ))}
+      </div>
+      <div className="celebrate-card">
+        <div className="celebrate-emoji">🎉</div>
+        <div className="celebrate-big">Best price in history!</div>
+        {price && <div className="celebrate-price">{price}</div>}
+        <div className="muted small" style={{ marginTop: 8 }}>Tap to continue</div>
       </div>
     </div>
   )

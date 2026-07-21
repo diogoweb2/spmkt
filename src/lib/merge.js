@@ -3,6 +3,7 @@
 // survivor and the other items are deleted.
 
 import { UNITS, unitKind } from './units'
+import { uid } from './db'
 
 // When merged records use mixed units of one kind, they are all rewritten to a
 // single unit: the first of these that is actually present among the records.
@@ -178,6 +179,38 @@ export function mergeItems(db, itemIds, name) {
     .map((i) => (i.id === survivor.id ? survivor : i))
 
   dropDuplicateFlyerRecords(db, survivor.id)
+}
+
+// The distinct shelf names folded into a merge group: every `origName` its
+// records carry (the group's own name is not an origName). Each is a candidate
+// to split back out with `unmergeName`. Returns [{ origName, count }], most
+// records first.
+export function mergedMembers(db, itemId) {
+  const counts = new Map()
+  for (const r of db.records) {
+    if (r.itemId !== itemId || !r.origName) continue
+    counts.set(r.origName, (counts.get(r.origName) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([origName, count]) => ({ origName, count }))
+    .sort((a, b) => b.count - a.count || a.origName.localeCompare(b.origName))
+}
+
+// Mutates `db`: split every record of `group` logged under `origName` back into
+// its own standalone item named `origName`, clearing the `origName` tag. No
+// price is lost; the new item inherits the group's kind/defaultUnit/category.
+// The reverse of merging one product into a group.
+export function unmergeName(db, itemId, origName) {
+  const group = db.items.find((i) => i.id === itemId)
+  if (!group) return
+  const moving = db.records.filter((r) => r.itemId === itemId && r.origName === origName)
+  if (!moving.length) return
+  const newItem = { ...group, id: uid('i'), name: origName, annualQty: null }
+  db.items.push(newItem)
+  for (const r of moving) {
+    r.itemId = newItem.id
+    delete r.origName
+  }
 }
 
 // Flyer imports dedupe per item+store, so the same real-world flyer deal can
