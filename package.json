@@ -19,7 +19,9 @@
     "flyers:force": "node scripts/flyers/run.mjs --force",
     "flyers:dry": "node scripts/flyers/run.mjs --dry-run",
     "prune": "node scripts/flyers/prune-whitelist.mjs",
-    "prune:dry": "node scripts/flyers/prune-whitelist.mjs --dry-run"
+    "prune:dry": "node scripts/flyers/prune-whitelist.mjs --dry-run",
+    "reprocess": "node scripts/flyers/reprocess-review.mjs",
+    "reprocess:dry": "node scripts/flyers/reprocess-review.mjs --dry-run"
   },
   "dependencies": {
     "firebase": "^12.15.0",

@@ -32,9 +32,9 @@ ${files.map((f) => f.path).join('\n')}
 For EACH photo, extract the price entry:
 - file: the image file name exactly as given (to match your answer back).
 - name: the product name. IMPORTANT: if the product matches one of the user's existing items below, return that EXACT existing name (so its price history continues); otherwise a clean generic name (brand + product, no marketing fluff).
-- price: the shelf price in dollars (number). If a discount/sale price is shown, use it.
+- price: the shelf price in dollars (number). If a discount/sale price is shown, use it. MEMBER PRICE: the shopper is a member of every store — if both a member/card/loyalty price (Scene+, Moi, PC Optimum, More Rewards, "member", "with card") and a higher regular price are shown, ALWAYS use the lower MEMBER price.
 - qty and unit: what the price buys. unit must be one of ${JSON.stringify(UNITS)}.
-  * price per lb/kg label -> qty 1, unit "lb"/"kg".
+  * price per lb/kg label ("/lb", "/kg" — e.g. "12.99/lb  28.64/kg") -> qty 1, unit "lb"/"kg". NEVER use "un" when a per-lb or per-kg price is shown.
   * package with printed weight/volume (750 g, 2 L...) -> qty = that amount, unit g/kg/ml/L.
   * priced by piece with NO weight printed -> qty = piece count, unit "un". NEVER invent a weight.
 - category: "meat" for meat/poultry/fish/seafood (fresh, frozen or processed), else "other".

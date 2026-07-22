@@ -40,6 +40,17 @@ export function findClaude() {
   throw new Error('claude CLI not found')
 }
 
+// Ordered, deduped page-image URLs from a flyers-on-line flyer page's HTML —
+// document order (each page is referenced twice). A flyer record's `flyerPage`
+// is the 1-based index into this list, so urls[flyerPage - 1] is that page's
+// image. Used by the import (download) and the review-reprocess script.
+export function flyerImageUrls(html) {
+  return [...new Set(
+    [...html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)]
+      .map((m) => m[0]),
+  )]
+}
+
 // The last JSON array in claude's output is the answer: it sometimes prints a
 // draft, reconsiders, and prints a corrected array. Elements are flat-ish
 // objects, so the last '[' before the last ']' is that array's start.
