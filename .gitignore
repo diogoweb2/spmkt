@@ -27,3 +27,4 @@ firebase-debug.log
 *.sw?
 scripts/flyers/.env
 scripts/flyers/service-account.json
+scripts/flyers/pending-thursday.json

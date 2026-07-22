@@ -3,19 +3,20 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.spmkt.flyers</string>
+  <string>com.spmkt.flyers-thursday</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/diogolopes/.local/share/fnm/node-versions/v24.12.0/installation/bin/node</string>
     <string>/Users/diogolopes/dev/Spmkt/scripts/flyers/run.mjs</string>
     <string>--upcoming</string>
+    <string>--retry</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/diogolopes/dev/Spmkt</string>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
-    <integer>3</integer>
+    <integer>4</integer>
     <key>Hour</key>
     <integer>10</integer>
     <key>Minute</key>

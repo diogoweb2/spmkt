@@ -111,6 +111,7 @@ export function applyEntry(d, entry, newId = null) {
           validUntil: entry.validUntil ?? null,
           flyerUrl: entry.flyerUrl ?? null,
           flyerPage: entry.flyerPage ?? null,
+          ...(entry.upcoming ? { upcoming: true } : {}),
         }
       : { source: 'photo' }),
     ts: entry.ts,

@@ -5,9 +5,12 @@
 // the import whitelist existed to keep the volume sane.)
 //
 // Usage:
-//   node scripts/flyers/run.mjs            # full run
-//   node scripts/flyers/run.mjs --dry-run  # extract only, print what would be saved
-//   node scripts/flyers/run.mjs --force    # re-import stores already done this week
+//   node scripts/flyers/run.mjs             # full run (current flyers)
+//   node scripts/flyers/run.mjs --upcoming  # import each store's NEXT-week flyer
+//   node scripts/flyers/run.mjs --upcoming --retry  # Thursday pass: only the
+//                                           # stores deferred by Wednesday's run
+//   node scripts/flyers/run.mjs --dry-run   # extract only, print what would be saved
+//   node scripts/flyers/run.mjs --force     # re-import stores already done this week
 //
 // A store whose flyer was already imported in the last 7 days is skipped
 // before downloading — no image fetch, no Claude call, no tokens burned.
@@ -28,6 +31,17 @@ import { classifyGroceryMarket } from './classify-grocery-market.mjs'
 const here = dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
 const FORCE = process.argv.includes('--force')
+// Upcoming-flyer mode: fetch each store's NEXT-week flyer (…/upcoming-flyer)
+// instead of the current one, so the user can decide today whether to buy on
+// this week's deals or wait. Imported deals are flagged `upcoming` and show an
+// 🔜 badge — a reminder they can't be bought yet. Scheduled Wednesday 10:00.
+const UPCOMING = process.argv.includes('--upcoming')
+// Thursday fallback pass: re-runs ONLY the stores whose upcoming flyer wasn't
+// published yet on Wednesday (recorded in pending-thursday.json). It retries
+// the upcoming flyer and, if still absent, falls back to the current flyer so
+// the store isn't skipped entirely. Scheduled Thursday 10:00.
+const RETRY = process.argv.includes('--retry')
+const PENDING_FILE = join(here, 'pending-thursday.json')
 // One flyer cycle, minus a day of slack: last week's run may have finished
 // later in the day than this week's (machine asleep at 9:30, manual re-run),
 // and a strict 7-day window would then skip the whole scheduled run.
@@ -45,9 +59,9 @@ function parseValidUntil(html) {
   return isNaN(dt) ? null : dt.getTime()
 }
 
-async function downloadPages(store, dir) {
-  const res = await fetch(store.url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-  if (!res.ok) throw new Error(`fetch ${store.url}: HTTP ${res.status}`)
+async function downloadPages(store, dir, url) {
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+  if (!res.ok) throw new Error(`fetch ${url}: HTTP ${res.status}`)
   const html = await res.text()
   const validUntil = parseValidUntil(html)
   // Page images are /data/promotions/<id>/<slug>_NN.jpg. The suffix is NOT the
@@ -58,11 +72,11 @@ async function downloadPages(store, dir) {
     [...html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)]
       .map((m) => m[0]),
   )]
-  if (!urls.length) throw new Error(`no flyer page images found at ${store.url}`)
+  if (!urls.length) throw new Error(`no flyer page images found at ${url}`)
   const files = []
-  for (const [i, url] of urls.entries()) {
+  for (const [i, imgUrl] of urls.entries()) {
     try {
-      const imgRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: store.url } })
+      const imgRes = await fetch(imgUrl, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: url } })
       if (!imgRes.ok) throw new Error(`HTTP ${imgRes.status}`)
       const file = join(dir, `${store.name.toLowerCase().replace(/\W+/g, '-')}-page${String(i + 1).padStart(2, '0')}.jpg`)
       writeFileSync(file, Buffer.from(await imgRes.arrayBuffer()))
@@ -71,7 +85,7 @@ async function downloadPages(store, dir) {
       log(`${store.name}: page ${i + 1} download failed (${err.message}) — skipping that page`)
     }
   }
-  if (!files.length) throw new Error(`all ${urls.length} page downloads failed for ${store.url}`)
+  if (!files.length) throw new Error(`all ${urls.length} page downloads failed for ${url}`)
   log(`${store.name}: downloaded ${files.length}/${urls.length} pages (valid until ${validUntil ? new Date(validUntil).toDateString() : 'unknown'})`)
   // pageCount = urls.length, not files.length: a failed download skips a file
   // but the remaining filenames keep their true page numbers.
@@ -138,7 +152,7 @@ function kindOf(unit) {
   return Object.keys(UNITS).find((k) => UNITS[k].includes(unit))
 }
 
-async function insertProducts(products, storeName, env, validUntil, flyerUrl, pageCount) {
+async function insertProducts(products, storeName, env, validUntil, flyerUrl, pageCount, upcoming) {
   const { db, save } = await openFamilyDoc(env)
   if (!db) throw new Error('family db doc not found')
   db.stores ??= []
@@ -221,6 +235,7 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
         validUntil: validUntil ?? null,
         flyerUrl: flyerUrl ?? null,
         flyerPage,
+        upcoming: !!upcoming,
       })
       added++
       continue
@@ -248,6 +263,9 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
       // extraction reported which page the deal was on, plain URL otherwise.
       flyerUrl: flyerUrl ?? null,
       flyerPage,
+      // Imported from the store's upcoming (next-week) flyer: the app shows an
+      // 🔜 badge so the user knows the deal can't be bought yet.
+      upcoming: !!upcoming,
     }
     // Dedupe: flyers are weekly, so at most one flyer record per item+store
     // per week — extraction can vary run to run (names, meat classification),
@@ -272,10 +290,34 @@ if (!DRY_RUN && !env.FAMILY_PASSWORD && !existsSync(join(here, 'service-account.
   process.exit(1)
 }
 
+// The Thursday retry pass runs only the stores whose upcoming flyer wasn't up
+// on Wednesday. If none were deferred, there is nothing to do.
+let storesToRun = stores
+if (RETRY) {
+  const deferred = existsSync(PENDING_FILE) ? JSON.parse(readFileSync(PENDING_FILE, 'utf8')) : []
+  storesToRun = stores.filter((s) => deferred.includes(s.name))
+  if (!storesToRun.length) {
+    log('No stores were deferred to Thursday — nothing to retry.')
+    process.exit(0)
+  }
+  log(`Thursday retry for: ${storesToRun.map((s) => s.name).join(', ')}`)
+}
+
+// The URL(s) to try for a store, in order. Upcoming mode fetches the next-week
+// flyer; the Thursday retry pass also falls back to the current flyer so a
+// store whose upcoming flyer is still absent isn't skipped for the week.
+const urlCandidates = (store) => {
+  if (!UPCOMING) return [{ url: store.url, upcoming: false }]
+  const cands = [{ url: `${store.url}/upcoming-flyer`, upcoming: true }]
+  if (RETRY) cands.push({ url: store.url, upcoming: false })
+  return cands
+}
+
 const workDir = mkdtempSync(join(tmpdir(), 'spmkt-flyers-'))
 let failed = false
-const results = [] // { name, added? , skipped?, error? }
-for (const store of stores) {
+const results = [] // { name, added?, skipped?, deferred?, error? }
+const deferToThursday = [] // Wednesday: stores whose upcoming flyer wasn't up yet
+for (const store of storesToRun) {
   const imgs = []
   try {
     let existingNames = []
@@ -311,7 +353,30 @@ for (const store of stores) {
       // — never lets an empty list silently import nothing. Meat is exempt.
       if (db?.whitelistOn && db?.whitelist?.length) whitelist = db.whitelist.map((r) => r.text)
     }
-    const dl = await downloadPages(store, workDir)
+    // Try the candidate URLs in order (upcoming flyer, then current flyer on
+    // the Thursday retry). The first that downloads wins.
+    let dl, chosen, lastErr
+    for (const c of urlCandidates(store)) {
+      try {
+        dl = await downloadPages(store, workDir, c.url)
+        chosen = c
+        break
+      } catch (err) {
+        lastErr = err
+        log(`${store.name}: ${c.upcoming ? 'upcoming' : 'current'} flyer unavailable (${err.message})`)
+      }
+    }
+    if (!dl) {
+      // Wednesday and the upcoming flyer isn't published yet: defer this store
+      // to Thursday's retry pass instead of failing the run.
+      if (UPCOMING && !RETRY) {
+        deferToThursday.push(store.name)
+        log(`${store.name}: upcoming flyer not up yet — deferring to Thursday`)
+        results.push({ name: store.name, deferred: true })
+        continue
+      }
+      throw lastErr
+    }
     imgs.push(...dl.files)
     // One Claude call per store, all pages at once (token efficiency). Any
     // cross-page or re-run duplicates are handled by insertProducts'
@@ -321,7 +386,7 @@ for (const store of stores) {
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
     } else {
-      const added = await insertProducts(products, store.name, env, dl.validUntil, store.url, dl.pageCount)
+      const added = await insertProducts(products, store.name, env, dl.validUntil, chosen.url, dl.pageCount, chosen.upcoming)
       results.push({ name: store.name, added })
     }
   } catch (err) {
@@ -333,6 +398,17 @@ for (const store of stores) {
   }
 }
 rmSync(workDir, { recursive: true, force: true })
+
+// Record which stores need the Thursday retry (Wednesday run), or clear the
+// list once Thursday has had its final attempt at them.
+if (!DRY_RUN) {
+  if (UPCOMING && !RETRY) {
+    if (deferToThursday.length) writeFileSync(PENDING_FILE, JSON.stringify(deferToThursday, null, 2))
+    else if (existsSync(PENDING_FILE)) unlinkSync(PENDING_FILE)
+  } else if (RETRY && existsSync(PENDING_FILE)) {
+    unlinkSync(PENDING_FILE)
+  }
+}
 
 // After the imports: classify new meat items (type, natural vs ultra-processed)
 // and refresh the Toronto market thresholds the app rates deals against.
@@ -371,12 +447,15 @@ if (!DRY_RUN) {
     const imported = results.filter((r) => r.added != null)
     const errored = results.filter((r) => r.error)
     const skipped = results.filter((r) => r.skipped)
+    const deferred = results.filter((r) => r.deferred)
     const totalAdded = imported.reduce((s, r) => s + r.added, 0)
-    const title = failed ? '⚠️ Flyer sync finished with errors' : '✅ Flyer sync done'
+    const kind = UPCOMING ? '🔜 Upcoming flyer sync' : 'Flyer sync'
+    const title = failed ? `⚠️ ${kind} finished with errors` : `✅ ${kind} done`
     const parts = [`${totalAdded} new deal${totalAdded === 1 ? '' : 's'} from ${imported.length} store${imported.length === 1 ? '' : 's'}.`]
     if (errored.length) parts.push(`Failed: ${errored.map((r) => r.name).join(', ')}.`)
     if (classifyFailed) parts.push('Classification failed.')
     if (skipped.length) parts.push(`${skipped.length} already up to date.`)
+    if (deferred.length) parts.push(`${deferred.map((r) => r.name).join(', ')} deferred to Thursday.`)
     await sendPush(env, { title, body: parts.join(' ') })
   } catch (err) {
     console.error(`[push] FAILED: ${err.message}`)

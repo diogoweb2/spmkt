@@ -48,10 +48,14 @@ export function flyerInfo(rec) {
   // Link to the flyer site when the import stored it; #p=N jumps to the page
   // the deal was found on (fall back to the flyer's first page without it).
   const url = rec.flyerUrl ? `${rec.flyerUrl}${rec.flyerPage ? `#p=${rec.flyerPage}` : ''}` : null
-  if (!rec.validUntil) return { text: '📰 flyer', valid: true, url }
+  // Imported from a store's upcoming (next-week) flyer: 🔜 badge so the user
+  // knows the deal isn't buyable today, only starting when the flyer goes live.
+  const upcoming = !!rec.upcoming
+  const tag = upcoming ? '🔜 upcoming' : '📰 flyer'
+  if (!rec.validUntil) return { text: tag, valid: true, url, upcoming }
   const d = new Date(rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const valid = Date.now() <= rec.validUntil
-  return { text: valid ? `📰 flyer until ${d}` : `📰 flyer ended ${d}`, valid, url }
+  return { text: valid ? `${tag} until ${d}` : `${tag} ended ${d}`, valid, url, upcoming }
 }
 
 export function variantRecords(db, itemId, key) {

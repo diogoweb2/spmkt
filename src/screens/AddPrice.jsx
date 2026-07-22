@@ -188,6 +188,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
               source: 'flyer',
               flyerUrl: photoEntry.flyerUrl ?? null,
               flyerPage: photoEntry.flyerPage ?? null,
+              ...(photoEntry.upcoming ? { upcoming: true } : {}),
               ...(photoEntry.origName && photoEntry.origName.toLowerCase() !== query.trim().toLowerCase() ? { origName: photoEntry.origName } : {}),
             }
           : {}),
