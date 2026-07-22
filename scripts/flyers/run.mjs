@@ -23,7 +23,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray, sendPush } from './shared.mjs'
+import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray, sendPush, uploadReviewImage } from './shared.mjs'
 import { classifyMeat } from './classify-meat.mjs'
 import { classifyGrocery } from './classify-grocery.mjs'
 import { classifyGroceryMarket } from './classify-grocery-market.mjs'
@@ -152,7 +152,7 @@ function kindOf(unit) {
   return Object.keys(UNITS).find((k) => UNITS[k].includes(unit))
 }
 
-async function insertProducts(products, storeName, env, validUntil, flyerUrl, pageCount, upcoming) {
+async function insertProducts(products, storeName, env, validUntil, flyerUrl, pageCount, upcoming, pageFiles = new Map()) {
   const { db, save } = await openFamilyDoc(env)
   if (!db) throw new Error('family db doc not found')
   db.stores ??= []
@@ -185,35 +185,37 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
       item = { id: uid('i'), name: p.name.trim(), category: isMeat ? 'meat' : 'other', kind: kindOf(p.unit), defaultUnit: p.unit, annualQty: null, meatType: null, processing: null, market: null }
       db.items.push(item)
     }
-    // Anything sold by the piece with no printed size ("3 pieces $8",
-    // "2 for $5") is stored honestly as `un` even on a weight/volume item:
-    // a reference-only record — kept in history, excluded from comparisons,
-    // fixable later by editing in the qty/weight. Any other kind mismatch
-    // (e.g. volume unit on a weight item) is an extraction error.
-    const byPiece = item.kind !== 'count' && kindOf(p.unit) === 'count'
-    if (kindOf(p.unit) !== item.kind && !byPiece) {
-      log(`  skip "${p.name}": unit ${p.unit} incompatible with item kind ${item.kind}`)
-      continue
-    }
+    const recKind = kindOf(p.unit)
     const flyerPage = Number.isInteger(p.page) && p.page >= 1 && p.page <= pageCount ? p.page : null
     const origName =
       typeof p.origName === 'string' && p.origName.trim() && p.origName.trim().toLowerCase() !== item.name.trim().toLowerCase()
         ? p.origName.trim()
         : null
-    // `un` means no size was found in the flyer text OR the product image — the
-    // extractor's last resort (§12). Rather than silently save a comparison-less
-    // price, park it in the Review inbox (photoQueue, status 'ready') with the
-    // ad linked, so the user can add the real weight before it lands. Dedupe by
-    // item+store+week covers both records and already-queued flyer entries.
-    if (p.unit === 'un') {
+
+    // Park a product in the Review inbox (photoQueue, status 'ready') instead of
+    // saving it — for `un` deals with no size, and for extraction slips whose
+    // unit doesn't fit the item. The flyer page image is uploaded and linked so
+    // the user can read the real size and fix it. Deduped by item+store+week
+    // across both records and already-queued flyer entries. See §12/§15.
+    const queueReview = async (unit, note) => {
       const already =
         db.records.some((r) => r.source === 'flyer' && r.itemId === item.id && r.storeId === store.id && r.ts > weekAgo) ||
         (db.photoQueue ?? []).some((q) => q.source === 'flyer' && q.matchedItemId === item.id && q.storeId === store.id && q.ts > weekAgo)
-      if (already) continue
+      if (already) return false
+      const id = uid('p')
+      let path = null
+      const localPath = flyerPage ? pageFiles.get(flyerPage) : null
+      if (localPath) {
+        try {
+          path = await uploadReviewImage(env, localPath, id)
+        } catch (err) {
+          log(`  "${p.name}": review image upload failed (${err.message})`)
+        }
+      }
       db.photoQueue ??= []
       db.photoQueue.push({
-        id: uid('p'),
-        path: null,
+        id,
+        path,
         storeId: store.id,
         status: 'ready',
         ts: Date.now(),
@@ -221,7 +223,7 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
         matchedItemId: item.id,
         price: p.price,
         qty: p.qty,
-        unit: 'un',
+        unit,
         category: isMeat ? 'meat' : 'other',
         frozen: isMeat ? !!p.frozen : null,
         bones: isMeat ? !!p.bones : null,
@@ -229,7 +231,7 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
         processing: null,
         groceryType: isMeat ? null : (item.groceryType ?? null),
         minQty: Number.isInteger(p.minQty) && p.minQty >= 2 ? p.minQty : null,
-        note: 'No weight in the ad — add the real size, or approve as-is.',
+        note,
         origName,
         source: 'flyer',
         validUntil: validUntil ?? null,
@@ -237,7 +239,33 @@ async function insertProducts(products, storeName, env, validUntil, flyerUrl, pa
         flyerPage,
         upcoming: !!upcoming,
       })
-      added++
+      return true
+    }
+
+    // An item created from earlier by-piece/`un` imports is a provisional
+    // `count` item with no real weight/volume history. A genuine weighted deal
+    // now upgrades it to that kind so it imports as a comparable record — the
+    // old `un` placeholders just become by-piece references on the new kind
+    // (reference-only, §3), which is exactly how the app already treats them.
+    if (item.kind === 'count' && recKind !== 'count') {
+      item.kind = recKind
+      item.defaultUnit = p.unit
+      log(`  "${item.name}": upgraded by-piece item to ${recKind} (${p.unit})`)
+    }
+
+    // `un` means no size was found in the flyer text OR the product image — the
+    // extractor's last resort (§12). Park it in Review to add the real weight.
+    if (p.unit === 'un') {
+      if (await queueReview('un', 'No weight in the ad — add the real size, or approve as-is.')) added++
+      continue
+    }
+    // A count unit on a weight/volume item is a legit by-piece price (§3).
+    // Any OTHER kind clash (e.g. a volume unit on a weight item) is an
+    // extraction slip — don't drop it; park it in Review with the ad image.
+    const byPiece = item.kind !== 'count' && recKind === 'count'
+    if (recKind !== item.kind && !byPiece) {
+      log(`  "${p.name}": unit ${p.unit} doesn't fit ${item.kind} item — sending to Review`)
+      if (await queueReview(p.unit, `Unit "${p.unit}" didn't match this ${item.kind} product — check the size in the ad.`)) added++
       continue
     }
     const rec = {
@@ -386,7 +414,14 @@ for (const store of storesToRun) {
     if (DRY_RUN) {
       console.log(JSON.stringify(products, null, 2))
     } else {
-      const added = await insertProducts(products, store.name, env, dl.validUntil, chosen.url, dl.pageCount, chosen.upcoming)
+      // page number -> local image file, so review-bound products can attach
+      // the flyer page (filenames end "-pageNN.jpg", NN = the flyer page).
+      const pageFiles = new Map()
+      for (const f of dl.files) {
+        const m = f.match(/-page(\d+)\.jpg$/)
+        if (m) pageFiles.set(Number(m[1]), f)
+      }
+      const added = await insertProducts(products, store.name, env, dl.validUntil, chosen.url, dl.pageCount, chosen.upcoming, pageFiles)
       results.push({ name: store.name, added })
     }
   } catch (err) {

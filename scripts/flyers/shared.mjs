@@ -54,9 +54,26 @@ export function lastJsonArray(out) {
 // directly, no password) and falling back to family-password sign-in.
 // Cached so callers share one Firebase app.
 let familyDoc
+let familyUid // set on the admin path — the uid photos/{uid}/... lives under
 export async function openFamilyDoc(env) {
   familyDoc ??= await connectFamilyDoc(env)
   return familyDoc
+}
+
+const BUCKET = 'spmkt-cc6fd.firebasestorage.app'
+
+// Uploads a local image to the family's photo folder so a Review entry can show
+// it (§12: flyer deals parked for a manual fix). Path matches what the app
+// reads — photos/{familyUid}/{id}.jpg — so storage.rules grant the client read.
+// Needs the admin SDK; returns the storage path, or null when unavailable (the
+// family-password path can't reach Storage, so the entry just has no image).
+export async function uploadReviewImage(env, localPath, id) {
+  await openFamilyDoc(env) // ensures the admin app + familyUid are initialized
+  if (!familyUid) return null
+  const dest = `photos/${familyUid}/${id}.jpg`
+  const { getStorage } = await import('firebase-admin/storage')
+  await getStorage().bucket(BUCKET).upload(localPath, { destination: dest, metadata: { contentType: 'image/jpeg' } })
+  return dest
 }
 
 // Web-push notification to every device registered in db.pushTokens (Settings →
@@ -101,6 +118,7 @@ async function connectFamilyDoc(env) {
     const { getFirestore } = await import('firebase-admin/firestore')
     const app = initializeApp({ credential: cert(JSON.parse(readFileSync(keyPath, 'utf8'))) })
     const user = await getAuth(app).getUserByEmail('family@smartprice.app')
+    familyUid = user.uid
     const ref = getFirestore(app).doc(`users/${user.uid}`)
     const snap = await ref.get()
     return { db: snap.exists ? snap.data() : null, save: (db) => ref.set(db) }

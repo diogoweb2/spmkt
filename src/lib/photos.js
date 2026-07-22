@@ -46,14 +46,19 @@ export function photoUrl(entry) {
   return getDownloadURL(ref(storage, entry.path))
 }
 
-// Remove a queue entry; best-effort delete of the photo if it still exists.
+// Best-effort delete of an entry's Storage image (pending photo capture, or a
+// flyer review entry with its page image, §12). No-op when the entry has no
+// path or the object is already gone (processed captures keep a dangling path).
+export function deleteEntryImage(entry) {
+  if (entry?.path) deleteObject(ref(storage, entry.path)).catch(() => {})
+}
+
+// Remove a queue entry; best-effort delete of its image if it still exists.
 export function removePhoto(update, entry) {
   update((d) => {
     d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== entry.id)
   })
-  if (entry.status === 'pending' || entry.status === 'failed') {
-    deleteObject(ref(storage, entry.path)).catch(() => {})
-  }
+  deleteEntryImage(entry)
 }
 
 // Apply an extracted entry (photo batch OR Photo Live) against the draft db:

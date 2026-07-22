@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fmtQty, unitKind } from '../lib/units'
 import { GROCERY_TYPE_LABEL } from '../lib/meat'
-import { photoUrl, removePhoto, applyEntry, entryItemId } from '../lib/photos'
+import { photoUrl, removePhoto, applyEntry, entryItemId, deleteEntryImage } from '../lib/photos'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
 import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
@@ -32,12 +32,14 @@ export default function Review({ db, update, push }) {
   function approve(entry, picked = []) {
     if (!picked.length) {
       update((d) => applyEntry(d, entry))
+      deleteEntryImage(entry) // flyer review entries carry a page image to clean up
       toast(`Saved ${entry.itemName} — $${entry.price}`)
       return
     }
     // Resolve the id before update() — its mutator is deferred by React.
     const itemId = entryItemId(db, entry)
     update((d) => applyEntry(d, entry, itemId))
+    deleteEntryImage(entry)
     const items = [
       db.items.find((i) => i.id === itemId) ?? { id: itemId, name: entry.itemName },
       ...picked.map((id) => db.items.find((i) => i.id === id)),
@@ -62,6 +64,7 @@ export default function Review({ db, update, push }) {
   function approveAll() {
     const batch = ready
     update((d) => batch.forEach((entry) => applyEntry(d, entry)))
+    batch.forEach(deleteEntryImage)
     toast(`Saved ${batch.length} prices ✓`)
   }
 
@@ -176,6 +179,8 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
   const fi = flyerInfo(entry)
   return (
     <div className="card review-card">
+      {/* Flyer entries parked for a manual fix (§12) carry the ad page image. */}
+      {entry.source === 'flyer' && entry.path && <FlyerThumb entry={entry} />}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <div className="rc-name" style={{ flex: 1, minWidth: 0 }}>{entry.itemName}</div>
         <div className="rc-price">
@@ -230,6 +235,30 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
         </button>
       </div>
     </div>
+  )
+}
+
+// The flyer page image behind a review entry (§12): a tappable preview that
+// opens full-size in a new tab, so the user can read the real size and fix the
+// unit before approving. Needs Storage read (storage.rules); shows a
+// placeholder if the image can't be loaded.
+function FlyerThumb({ entry }) {
+  const [url, setUrl] = useState(null)
+  const [broken, setBroken] = useState(false)
+  useEffect(() => {
+    let on = true
+    photoUrl(entry)
+      .then((u) => on && setUrl(u))
+      .catch((e) => { if (on) { setBroken(true); console.warn('flyer image unavailable:', e.code ?? e.message) } })
+    return () => { on = false }
+  }, [entry])
+  if (broken) return null
+  return (
+    <a href={url ?? undefined} target="_blank" rel="noreferrer" style={{ display: 'block', marginBottom: 8 }}>
+      {url
+        ? <img src={url} alt="flyer page" onError={() => setBroken(true)} style={{ width: '100%', maxHeight: 220, objectFit: 'cover', objectPosition: 'top', borderRadius: 10 }} />
+        : <div className="skeleton" style={{ width: '100%', height: 120, borderRadius: 10 }} />}
+    </a>
   )
 }
 
