@@ -4,6 +4,7 @@ import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GR
 import { ignoreItems } from '../lib/ignore'
 import { canMerge, mergeItems, suggestName, targetUnit, groupIds } from '../lib/merge'
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo, isComparable } from '../lib/analysis'
+import { buyTodayDeals } from '../lib/buytoday'
 import { effectivePrice } from '../lib/cashback'
 import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
@@ -91,7 +92,12 @@ export default function Home({ db, update, push }) {
   const [menuFor, setMenuFor] = useState(null) // row key with its ⋮ menu open
   const [storeSheet, setStoreSheet] = useState(false)
   const [pendingAdd, setPendingAdd] = useState(null) // add flow waiting for a store pick
+  const [buyTodayOpen, setBuyTodayOpen] = useState(false)
   const press = useRef({ timer: null, long: false })
+
+  // "Buy it today!" — Wednesdays only (after the upcoming-flyer import):
+  // products whose live deal beats next week's flyer, so waiting costs more.
+  const buyToday = useMemo(() => (new Date().getDay() === 3 ? buyTodayDeals(db) : []), [db])
 
   const groups = useMemo(() => meatDeals(db, { includeExpired: showExpired }), [db, showExpired])
   const grocery = useMemo(() => groceryDeals(db, { includeExpired: showExpired }), [db, showExpired])
@@ -385,6 +391,16 @@ export default function Home({ db, update, push }) {
         <button className={deals ? 'on' : ''} onClick={() => { setView('deals'); exitSelect() }}>🏷️ Deals</button>
         <button className={!deals ? 'on' : ''} onClick={() => { setView('items'); exitSelect() }}>📋 All items</button>
       </div>
+
+      {buyToday.length > 0 && !selecting && (
+        <button
+          className="btn"
+          style={{ width: '100%', marginBottom: 12, background: 'var(--accent)', color: '#fff', fontWeight: 700 }}
+          onClick={() => setBuyTodayOpen(true)}
+        >
+          🛒 Buy it today! — {buyToday.length} deal{buyToday.length === 1 ? '' : 's'} cheaper now than next week
+        </button>
+      )}
 
       {selecting && (
         <p className="muted small" style={{ marginTop: -4, marginBottom: 10 }}>
@@ -690,6 +706,50 @@ export default function Home({ db, update, push }) {
       )}
 
       {/* ---------- dialogs ---------- */}
+      {buyTodayOpen && (
+        <div className="modal-backdrop" onClick={() => setBuyTodayOpen(false)}>
+          <div className="dialog" style={{ maxWidth: 560, maxHeight: '82vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <h2>Buy it today! 🛒</h2>
+            <p className="muted small" style={{ marginTop: -4 }}>
+              These are cheaper in this week's flyer than in next week's upcoming flyer — grab them now, don't wait.
+            </p>
+            {buyToday.map((e) => {
+              const kind = e.item.kind
+              return (
+                <div key={`${e.item.id}|${e.variant}`} className="card" style={{ padding: 12, marginTop: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <b>{e.item.name}</b>
+                    <span className="badge lvl-first" style={{ fontSize: 11 }}>save {e.pct}%</span>
+                  </div>
+                  {e.variantLabel && <div className="muted small">{e.variantLabel}</div>}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                    <div>
+                      <div className="muted small">📰 This week</div>
+                      <div style={{ fontWeight: 700, color: 'var(--accent)' }}>
+                        {fmtDisplay(e.current.norm, kind, db.displayWeightUnit)}
+                      </div>
+                      <div className="small">{e.current.store.name}</div>
+                      <FlyerLink fi={flyerInfo(e.current.rec)} className="badge lvl-ok" style={{ fontSize: 10 }} />
+                    </div>
+                    <div>
+                      <div className="muted small">🔜 Next week</div>
+                      <div style={{ fontWeight: 700 }}>
+                        {fmtDisplay(e.upcoming.norm, kind, db.displayWeightUnit)}
+                      </div>
+                      <div className="small">{e.upcoming.store.name}</div>
+                      <FlyerLink fi={flyerInfo(e.upcoming.rec)} className="badge" style={{ fontSize: 10 }} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            <div style={{ display: 'flex', marginTop: 14 }}>
+              <button className="btn ghost" style={{ marginLeft: 'auto' }} onClick={() => setBuyTodayOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmIgnore && (
         <div className="modal-backdrop" onClick={() => setConfirmIgnore(null)}>
           <div className="dialog" onClick={(e) => e.stopPropagation()}>
