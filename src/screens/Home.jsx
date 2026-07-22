@@ -156,7 +156,7 @@ export default function Home({ db, update, push }) {
   const show = (d) =>
     !storesOff.has(d.store.id) &&
     (d.rating == null || ratingsOn.has(d.rating)) &&
-    (!qNorm || d.item.name.toLowerCase().includes(qNorm)) &&
+    (!qNorm || d.item.name.toLowerCase().includes(qNorm) || (d.rec.origName ?? '').toLowerCase().includes(qNorm)) &&
     (d.isMeat
       ? proc === 'all' || (proc === 'ultra') === d.ultra
       : !catsOff.has(d.gtype))
@@ -531,6 +531,11 @@ export default function Home({ db, update, push }) {
                             {d.item.name}
                             {!selecting && <PhotoLink name={d.item.name} />}
                           </div>
+                          {/* Shelf name when the deal is grouped under a generic
+                              name (e.g. "Cookies") — so it's findable in-store. */}
+                          {d.rec.origName && (
+                            <div className="sub" style={{ fontStyle: 'italic' }}>“{d.rec.origName}”</div>
+                          )}
                           <div className="sub row-store">
                             {storeLogo(d.store.name) ? (
                               <img className="row-logo" src={storeLogo(d.store.name)} alt={d.store.name} title={d.store.name} />

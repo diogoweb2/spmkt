@@ -182,7 +182,9 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
       {/* Flyer entries parked for a manual fix (§12) carry the ad page image. */}
       {entry.source === 'flyer' && entry.path && <FlyerThumb entry={entry} />}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <div className="rc-name" style={{ flex: 1, minWidth: 0 }}>{entry.itemName}</div>
+        {/* Show the shelf name (origName) so the product is recognizable in the
+            store; the group it lands in is shown by the "matches …" badge. */}
+        <div className="rc-name" style={{ flex: 1, minWidth: 0 }}>{entry.origName || entry.itemName}</div>
         <div className="rc-price">
           ${entry.price}{entry.qty === 1 ? `/${entry.unit}` : ` · ${fmtQty(entry.qty, entry.unit)}`}
         </div>
