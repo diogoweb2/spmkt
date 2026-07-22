@@ -20,7 +20,7 @@
 // each entry), so it works even for entries imported before page images were
 // uploaded to Storage.
 
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { writeFileSync, unlinkSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
