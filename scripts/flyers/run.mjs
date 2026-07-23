@@ -118,6 +118,8 @@ ${imgPaths.join('\n')}
 Extract every grocery deal from ALL pages combined. Output ONLY a single JSON array (no prose, no markdown fence). If the same product appears on more than one page, output it once. Each element:
 {"name": string, "origName": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "minQty": number|null, "file": string, "page": number}
 
+COMPLETENESS — before you output, go back over EACH page image block by block (left to right, top to bottom) and check that every priced product block made it into your array. A flyer page normally holds 6-20 deals. The big "hero" ads (huge price, large photo, often the top half of page 1) are the ones the user cares about most and are the easiest to skip while reading the small print around them — never drop one. Missing a deal is the worst failure mode here.
+
 Rules:
 - file: the FULL PATH of the image file this deal was read from, copied EXACTLY from the list above. This is how the user is shown the right ad page — a wrong path shows them the wrong page, so copy the path of the file you were actually looking at when you saw this deal. Never guess it, never reuse the previous element's path out of habit.
 - page: the NN number in that same file's name ("...-pageNN.jpg" -> page NN). It must match "file". If a product appears on several pages, use the first.
@@ -169,6 +171,9 @@ Rules:
 // the less chance a deal is tagged with a neighbouring page (which then shows
 // the wrong ad image in Review).
 const PAGES_PER_CALL = Number(argValue('--pages-per-call')) || 2
+// Reasoning effort for the extraction. `low` reads dense pages well but can
+// still skip a deal on a crowded page — `--effort medium` when that matters.
+const EFFORT = argValue('--effort') || 'low'
 
 function extractProducts(imgPaths, storeName, existingNames, ignoredNames, whitelist, groups = []) {
   const claude = findClaude()
@@ -186,7 +191,7 @@ function extractProducts(imgPaths, storeName, existingNames, ignoredNames, white
         // size isn't printed in the ad (e.g. Oikos 4-pack = 400 g).
         // Sonnet at low effort: Haiku skimmed pages, misread sizes and reused
         // wrong item names. Batched pages keep the cost sane.
-        '--allowedTools', 'Read,WebSearch', '--model', 'claude-sonnet-5', '--effort', 'low'], {
+        '--allowedTools', 'Read,WebSearch', '--model', 'claude-sonnet-5', '--effort', EFFORT], {
         encoding: 'utf8',
         maxBuffer: 32 * 1024 * 1024,
         timeout: 30 * 60 * 1000,
