@@ -84,10 +84,18 @@ async function downloadPages(store, dir, url) {
   // display order — Superstore's first page is _07, with _01.._06 being ad
   // inserts. The site renders pages in document order, so we keep the URLs in
   // the order they appear in the HTML (deduped: each page is referenced twice).
-  const urls = [...new Set(
-    [...html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)]
-      .map((m) => m[0]),
-  )]
+  // Dedupe on the URL WITHOUT its ?v=<cachebuster> query: the same page is
+  // linked both bare and with a version param, and a naive Set kept both —
+  // page 1 was downloaded twice and every later page's number was off by one
+  // (so flyerPage links pointed at the previous page).
+  const seen = new Set()
+  const urls = []
+  for (const m of html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)) {
+    const key = m[0].split('?')[0]
+    if (seen.has(key)) continue
+    seen.add(key)
+    urls.push(m[0])
+  }
   if (!urls.length) throw new Error(`no flyer page images found at ${url}`)
   const files = []
   for (const [i, imgUrl] of urls.entries()) {
@@ -110,8 +118,9 @@ async function downloadPages(store, dir, url) {
 
 // ---------- claude extraction ----------
 
-// All of a flyer's pages go into ONE call: the system prompt, the rules and
-// the db item names are paid once per store instead of once per page.
+// One call per BATCH of pages (see PAGES_PER_CALL): the rules and db item
+// names are re-paid per batch, but a whole flyer in a single call made the
+// model skim and miss most of the deals.
 const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist, groups = []) => `Use the Read tool to open ${imgPaths.length === 1 ? 'this image file' : `these ${imgPaths.length} image files, one by one`} — they are the pages of one supermarket flyer and you CAN view images via the Read tool:
 ${imgPaths.join('\n')}
 
@@ -142,7 +151,8 @@ Rules:
 - Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip anything that is not a grocery product you'd buy to eat or use in the kitchen/home: store banners, event ads, store hours, loyalty-points promos with no concrete product price, toys, clothing, electronics, kitchenware, pet food, garden. If the page turns out to be a pure advertisement with no priced groceries, return an empty array [].
 - If a price is unreadable, skip that product.${existingNames.length ? `
-- The db already has these items — if a flyer product is the same product as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation; origName still keeps the flyer's own wording: ${JSON.stringify(existingNames)}` : ''}${groups.length ? `
+- The db already has these items — if a flyer product is THE SAME PRODUCT as one of these, use that EXACT name (so its price history continues) instead of inventing a new variation; origName still keeps the flyer's own wording: ${JSON.stringify(existingNames)}
+  CRITICAL: only reuse a name when it is genuinely the same product. A different cut, species, or product type MUST get its own name, even when an existing name looks similar — chicken wings are NOT chicken thighs, pork loin chops are NOT pork shoulder blade chops, breaded chicken strips are NOT smoked sausages, strip loin steak is NOT ground beef. When no existing name is truly the same product, write a new accurate name from the flyer wording. A wrong reuse corrupts another product's price history, which is far worse than one extra item.` : ''}${groups.length ? `
 - MERGE GROUPS — the user groups similar products under one shared name so they compare side by side. Each group below lists its shared "name" and example shelf products already inside it. If a flyer product clearly belongs to a group (same product category as its members — e.g. any potato/tortilla chips -> a "Chips" group; any cheese -> a "Cheese" group; any yogurt -> a "Yogurt" group), set "name" to the group's EXACT shared name and keep the flyer's own wording in origName. Only route into a group when the product genuinely fits it; when unsure, use a normal specific name instead. Groups: ${JSON.stringify(groups)}` : ''}${ignoredNames.length ? `
 - IGNORED PRODUCTS — the user deleted these and never wants to see them again: ${JSON.stringify(ignoredNames)}
   Each name is an EXAMPLE of a product type, not a string to match on. Work out what the product actually IS — its generic type, dropping the brand, the size and any qualifier — then omit every flyer product of that type, whatever its brand or variety.
@@ -158,19 +168,49 @@ Rules:
   Meat/fish/poultry (category "meat") are EXEMPT: always include them regardless of the whitelist.
   If an IGNORED PRODUCTS rule above conflicts with the whitelist, the ignore wins: an ignored product type stays out.` : ''}`
 
+// Pages per Claude call. A 17-page flyer in ONE call made the model skim — it
+// returned ~30 deals for a flyer holding far more. Batching a few pages per
+// call keeps recall high; the prompt overhead (rules + db item names) is then
+// paid once per batch instead of once per store, which is the price of not
+// missing deals. Override with --pages-per-call N.
+const PAGES_PER_CALL = Number(argValue('--pages-per-call')) || 4
+
 function extractProducts(imgPaths, storeName, existingNames, ignoredNames, whitelist, groups = []) {
   const claude = findClaude()
-  log(`${storeName}: extracting ${imgPaths.length} page${imgPaths.length === 1 ? '' : 's'} with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPaths, existingNames, ignoredNames, whitelist, groups), // WebSearch: standard retail sizes for packaged/processed products whose
-// size isn't printed in the ad (e.g. Oikos 4-pack = 400 g).
-'--allowedTools', 'Read,WebSearch', '--model', 'claude-haiku-4-5'], {
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
-    timeout: 30 * 60 * 1000,
-  })
-  const products = lastJsonArray(out)
+  const batches = []
+  for (let i = 0; i < imgPaths.length; i += PAGES_PER_CALL) batches.push(imgPaths.slice(i, i + PAGES_PER_CALL))
+  log(`${storeName}: extracting ${imgPaths.length} page${imgPaths.length === 1 ? '' : 's'} in ${batches.length} call${batches.length === 1 ? '' : 's'} with ${claude}`)
   const allUnits = Object.values(UNITS).flat()
-  return products.filter((p) => p && p.name && p.price > 0 && p.qty > 0 && allUnits.includes(p.unit))
+  const products = []
+  const seen = new Set()
+  for (const [n, batch] of batches.entries()) {
+    let parsed = []
+    try {
+      const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(batch, existingNames, ignoredNames, whitelist, groups),
+        // WebSearch: standard retail sizes for packaged/processed products whose
+        // size isn't printed in the ad (e.g. Oikos 4-pack = 400 g).
+        '--allowedTools', 'Read,WebSearch', '--model', 'claude-haiku-4-5'], {
+        encoding: 'utf8',
+        maxBuffer: 32 * 1024 * 1024,
+        timeout: 30 * 60 * 1000,
+      })
+      parsed = lastJsonArray(out)
+    } catch (err) {
+      // One bad batch must not cost the whole flyer.
+      log(`${storeName}: batch ${n + 1}/${batches.length} failed (${err.message}) — skipping those pages`)
+      continue
+    }
+    const valid = parsed.filter((p) => p && p.name && p.price > 0 && p.qty > 0 && allUnits.includes(p.unit))
+    log(`${storeName}: batch ${n + 1}/${batches.length} -> ${valid.length} deals`)
+    for (const p of valid) {
+      // Same product seen again in another batch (or on another page): keep the first.
+      const key = `${(p.origName || p.name).trim().toLowerCase()}|${p.price}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      products.push(p)
+    }
+  }
+  return products
 }
 
 // ---------- firestore insert ----------
