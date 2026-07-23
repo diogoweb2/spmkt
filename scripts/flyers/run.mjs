@@ -26,7 +26,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray, sendPush, uploadReviewImage } from './shared.mjs'
+import { log, loadEnv, findClaude, openFamilyDoc, lastJsonArray, sendPush, uploadReviewImage, flyerImageUrls } from './shared.mjs'
 import { classifyMeat } from './classify-meat.mjs'
 import { classifyGrocery } from './classify-grocery.mjs'
 import { classifyGroceryMarket } from './classify-grocery-market.mjs'
@@ -84,18 +84,9 @@ async function downloadPages(store, dir, url) {
   // display order — Superstore's first page is _07, with _01.._06 being ad
   // inserts. The site renders pages in document order, so we keep the URLs in
   // the order they appear in the HTML (deduped: each page is referenced twice).
-  // Dedupe on the URL WITHOUT its ?v=<cachebuster> query: the same page is
-  // linked both bare and with a version param, and a naive Set kept both —
-  // page 1 was downloaded twice and every later page's number was off by one
-  // (so flyerPage links pointed at the previous page).
-  const seen = new Set()
-  const urls = []
-  for (const m of html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)) {
-    const key = m[0].split('?')[0]
-    if (seen.has(key)) continue
-    seen.add(key)
-    urls.push(m[0])
-  }
+  // Shared with reprocess-review.mjs so both number the pages identically
+  // (it dedupes on the URL without its ?v= cachebuster — see shared.mjs).
+  const urls = flyerImageUrls(html)
   if (!urls.length) throw new Error(`no flyer page images found at ${url}`)
   const files = []
   for (const [i, imgUrl] of urls.entries()) {
@@ -125,10 +116,11 @@ const EXTRACT_PROMPT = (imgPaths, existingNames, ignoredNames, whitelist, groups
 ${imgPaths.join('\n')}
 
 Extract every grocery deal from ALL pages combined. Output ONLY a single JSON array (no prose, no markdown fence). If the same product appears on more than one page, output it once. Each element:
-{"name": string, "origName": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "minQty": number|null, "page": number}
+{"name": string, "origName": string, "category": "meat"|"other", "price": number, "qty": number, "unit": "kg"|"g"|"lb"|"oz"|"L"|"ml"|"un", "frozen": boolean|null, "bones": boolean|null, "skin": boolean|null, "minQty": number|null, "file": string, "page": number}
 
 Rules:
-- page: the flyer page the deal appears on = the NN number in the image file's name ("...-pageNN.jpg" -> page NN). If a product appears on several pages, use the first.
+- file: the FULL PATH of the image file this deal was read from, copied EXACTLY from the list above. This is how the user is shown the right ad page — a wrong path shows them the wrong page, so copy the path of the file you were actually looking at when you saw this deal. Never guess it, never reuse the previous element's path out of habit.
+- page: the NN number in that same file's name ("...-pageNN.jpg" -> page NN). It must match "file". If a product appears on several pages, use the first.
 - name: clean generic product name with brand if shown (e.g. "Chicken Drumsticks", "Coca-Cola 12-pack"). No sizes/prices in the name.
 - origName: the product name exactly as printed on the flyer (brand, variety, wording — still no sizes/prices). This is what the user reads on the shelf, so keep it faithful even when "name" is a generic/db name that groups it with similar products.
 - price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un", minQty 2. A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
@@ -173,7 +165,10 @@ Rules:
 // call keeps recall high; the prompt overhead (rules + db item names) is then
 // paid once per batch instead of once per store, which is the price of not
 // missing deals. Override with --pages-per-call N.
-const PAGES_PER_CALL = Number(argValue('--pages-per-call')) || 4
+// Small batches also keep PAGE ATTRIBUTION honest: the fewer pages in a call,
+// the less chance a deal is tagged with a neighbouring page (which then shows
+// the wrong ad image in Review).
+const PAGES_PER_CALL = Number(argValue('--pages-per-call')) || 2
 
 function extractProducts(imgPaths, storeName, existingNames, ignoredNames, whitelist, groups = []) {
   const claude = findClaude()
@@ -189,7 +184,9 @@ function extractProducts(imgPaths, storeName, existingNames, ignoredNames, white
       const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(batch, existingNames, ignoredNames, whitelist, groups),
         // WebSearch: standard retail sizes for packaged/processed products whose
         // size isn't printed in the ad (e.g. Oikos 4-pack = 400 g).
-        '--allowedTools', 'Read,WebSearch', '--model', 'claude-haiku-4-5'], {
+        // Sonnet at low effort: Haiku skimmed pages, misread sizes and reused
+        // wrong item names. Batched pages keep the cost sane.
+        '--allowedTools', 'Read,WebSearch', '--model', 'claude-sonnet-5', '--effort', 'low'], {
         encoding: 'utf8',
         maxBuffer: 32 * 1024 * 1024,
         timeout: 30 * 60 * 1000,
@@ -200,8 +197,26 @@ function extractProducts(imgPaths, storeName, existingNames, ignoredNames, white
       log(`${storeName}: batch ${n + 1}/${batches.length} failed (${err.message}) — skipping those pages`)
       continue
     }
-    const valid = parsed.filter((p) => p && p.name && p.price > 0 && p.qty > 0 && allUnits.includes(p.unit))
-    log(`${storeName}: batch ${n + 1}/${batches.length} -> ${valid.length} deals`)
+    // Page attribution: trust the file path the model copied back, not the
+    // number it typed — the page drives which ad image the Review card shows,
+    // and a wrong page showed the user a useless image. A deal whose file/page
+    // isn't one of THIS batch's pages gets page null (no image) rather than a
+    // confidently wrong one; a single-page batch can only be that page.
+    const pagesInBatch = new Map() // "-pageNN.jpg" -> NN, for this batch only
+    for (const f of batch) {
+      const m = f.match(/-page(\d+)\.jpg$/)
+      if (m) pagesInBatch.set(f, Number(m[1]))
+    }
+    const only = pagesInBatch.size === 1 ? [...pagesInBatch.values()][0] : null
+    const valid = parsed
+      .filter((p) => p && p.name && p.price > 0 && p.qty > 0 && allUnits.includes(p.unit))
+      .map((p) => {
+        const fromFile = typeof p.file === 'string' ? pagesInBatch.get(p.file.trim()) : undefined
+        const fromNum = [...pagesInBatch.values()].includes(p.page) ? p.page : undefined
+        return { ...p, page: fromFile ?? fromNum ?? only ?? null }
+      })
+    const noPage = valid.filter((p) => p.page == null).length
+    log(`${storeName}: batch ${n + 1}/${batches.length} -> ${valid.length} deals${noPage ? ` (${noPage} with no reliable page)` : ''}`)
     for (const p of valid) {
       // Same product seen again in another batch (or on another page): keep the first.
       const key = `${(p.origName || p.name).trim().toLowerCase()}|${p.price}`
