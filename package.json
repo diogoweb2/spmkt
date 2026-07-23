@@ -18,6 +18,8 @@
     "flyers": "node scripts/flyers/run.mjs",
     "flyers:force": "node scripts/flyers/run.mjs --force",
     "flyers:dry": "node scripts/flyers/run.mjs --dry-run",
+    "flyer:custom": "node scripts/flyers/run.mjs",
+    "flyer:custom:dry": "node scripts/flyers/run.mjs --dry-run",
     "prune": "node scripts/flyers/prune-whitelist.mjs",
     "prune:dry": "node scripts/flyers/prune-whitelist.mjs --dry-run",
     "reprocess": "node scripts/flyers/reprocess-review.mjs",

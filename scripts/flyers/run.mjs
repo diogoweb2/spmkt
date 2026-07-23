@@ -11,6 +11,9 @@
 //                                           # stores deferred by Wednesday's run
 //   node scripts/flyers/run.mjs --dry-run   # extract only, print what would be saved
 //   node scripts/flyers/run.mjs --force     # re-import stores already done this week
+//   node scripts/flyers/run.mjs --url <flyer url> [--store "Name"]
+//                                           # one-off import of ANY flyer URL
+//                                           # (npm run flyer:custom -- --url ...)
 //
 // A store whose flyer was already imported in the last 7 days is skipped
 // before downloading — no image fetch, no Claude call, no tokens burned.
@@ -30,17 +33,30 @@ import { classifyGroceryMarket } from './classify-grocery-market.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const DRY_RUN = process.argv.includes('--dry-run')
-const FORCE = process.argv.includes('--force')
+// `--flag value` (or `--flag=value`) reader for the custom-flyer options.
+const argValue = (flag) => {
+  const i = process.argv.indexOf(flag)
+  if (i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--')) return process.argv[i + 1]
+  const eq = process.argv.find((a) => a.startsWith(`${flag}=`))
+  return eq ? eq.slice(flag.length + 1) : null
+}
+// Custom one-off flyer: import a single URL the user pastes, instead of the
+// stores.json list. Store name comes from --store, else from a stores.json
+// entry whose URL prefixes it, else from the URL slug. Always re-imports (the
+// user asked for this specific flyer) and ignores --upcoming/--retry.
+const CUSTOM_URL = argValue('--url')
+const CUSTOM_STORE = argValue('--store')
+const FORCE = process.argv.includes('--force') || !!CUSTOM_URL
 // Upcoming-flyer mode: fetch each store's NEXT-week flyer (…/upcoming-flyer)
 // instead of the current one, so the user can decide today whether to buy on
 // this week's deals or wait. Imported deals are flagged `upcoming` and show an
 // 🔜 badge — a reminder they can't be bought yet. Scheduled Wednesday 10:00.
-const UPCOMING = process.argv.includes('--upcoming')
+const UPCOMING = !CUSTOM_URL && process.argv.includes('--upcoming')
 // Thursday fallback pass: re-runs ONLY the stores whose upcoming flyer wasn't
 // published yet on Wednesday (recorded in pending-thursday.json). It retries
 // the upcoming flyer and, if still absent, falls back to the current flyer so
 // the store isn't skipped entirely. Scheduled Thursday 10:00.
-const RETRY = process.argv.includes('--retry')
+const RETRY = !CUSTOM_URL && process.argv.includes('--retry')
 const PENDING_FILE = join(here, 'pending-thursday.json')
 // One flyer cycle, minus a day of slack: last week's run may have finished
 // later in the day than this week's (machine asleep at 9:30, manual re-run),
@@ -110,12 +126,19 @@ Rules:
 - MEMBER / LOYALTY PRICE — the shopper is a member of EVERY store. Many flyers print TWO prices: a lower member/card price (labelled "MEMBER", "MEMBER PRICING", "member price", "with card", or a loyalty brand — Scene+, Moi, PC Optimum, More Rewards, AIR MILES) and a higher regular price ("without Scene+ Card", "non-member", "non moi price", "regular"). ALWAYS record the MEMBER price (the lower one), never the regular price. E.g. "MEMBER ONLY 11.99/lb · without Scene+ Card 12.99/lb" -> price 11.99. "moi price 1.98 · non moi price 2.50" -> price 1.98, minQty null.
 - PRICED BY WEIGHT (/lb or /kg) — if a price shows "/lb", " lb", "/kg" or " kg" next to it (e.g. "12.99/lb  28.64/kg"), the product is sold BY WEIGHT: use unit "lb" with qty 1 when "/lb" is shown (else "kg", qty 1). NEVER output "un" for a product that has a per-lb or per-kg price — almost all fresh meat, deli and loose produce is priced this way, so read the "/lb" or "/kg" and use it.
 - minQty — multi-buy deals ("2 for $5", "2/$2.50", "3/$10", "buy 2 or more"): price = the PER-ITEM deal price and minQty = the minimum count the shopper must buy to get it (2, 2, 3, 2 in those examples). When the flyer also shows a single-item price ("2/$2.50 OR $1.50 EA"), record the multi-buy price with its minQty (price 1.25, minQty 2 there) — the multi-buy is the deal. If each item has a printed size, qty+unit still describe ONE item ("2/$7" on 500 g boxes -> price 3.50, qty 500, unit "g", minQty 2). Normal prices with no minimum -> minQty null.
-- ALWAYS PREFER A WEIGHT/VOLUME OVER "un". "un" is the LAST RESORT, only when no size can be found anywhere. Work in this order: (1) read the size from the flyer TEXT/title; (2) if the title shows a RANGE of sizes ("210/235 G", "210-235 g", "SELECTED VARIETIES 210/235 G"), it means the varieties come in different sizes — pick the LOWER number (210 g here); (3) if the title has no size, READ THE SIZE OFF THE PRODUCT IMAGE — packaged goods almost always print the net weight on the bag/box (e.g. "235 g" on a chip bag), so open the image and look; (4) only if you genuinely cannot find any size in the text OR the image, fall back to unit "un".
+- ALWAYS PREFER A WEIGHT/VOLUME OVER "un". "un" is the LAST RESORT, only when no size can be found anywhere. Work in this order: (1) read the size from the flyer TEXT/title; (2) if the title shows a RANGE of sizes ("210/235 G", "210-235 g", "SELECTED VARIETIES 210/235 G"), it means the varieties come in different sizes — pick the LOWER number (210 g here); (3) if the title has no size, READ THE SIZE OFF THE PRODUCT IMAGE — packaged goods almost always print the net weight on the bag/box (e.g. "235 g" on a chip bag), so open the image and look; (4) if there is still no size, LOOK UP THE STANDARD RETAIL SIZE with the WebSearch tool (see next rule); (5) only if the lookup gives no confident answer, fall back to unit "un".
+- STANDARD SIZE LOOKUP (WebSearch) — packaged and processed products are sold in very standard sizes, so when steps (1)-(3) found no size you MUST use the WebSearch tool to find the normal Canadian retail size for that exact product, e.g. search "Oikos 4 pack yogurt weight" -> 4 x 100 g = qty 400 unit "g"; "Activia tub 650 g"; "Miss Vickie's chips bag size". Use the pack count VISIBLE IN THE AD (the Oikos photo shows 4 cups -> multiply the per-cup size by 4). Only accept a size you find stated for that brand/product; if results disagree or are vague, do NOT guess — fall back to "un".
+  · ALLOWED for: packaged/boxed/bottled groceries, and PROCESSED meat & fish (bacon, sausages, deli slices, nuggets, breaded fish, frozen boxes).
+  · NEVER for: fresh/natural meat, poultry, fish and loose produce — those have no standard size, so never search or guess a weight for them.
 - The item kinds must stay consistent: weight units (kg/g/lb/oz) only when a weight is printed or the price is per weight.
 - Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. If a multi-product deal shows a different size per product, use each product's own size.
-- NEVER invent or estimate a weight/volume that is not printed on the flyer — but a size printed ON THE PRODUCT IMAGE (net weight on the bag/box) IS printed on the flyer, so reading it off the image is required, not inventing. If a product is priced by piece or by package with no size printed anywhere (not in the text and not visible on the image) (e.g. "BONELESS SKINLESS CHICKEN BREAST, 3 piece — ONLY $8", "2 for $5"), use unit "un" with qty = the number of pieces/items (3 and 1 in those examples). This applies to meat too: "3 piece $8" -> price 8, qty 3, unit "un", category "meat". A wrong guessed weight is far worse than an honest per-piece price.
+- NEVER invent or estimate a weight/volume — but a size printed ON THE PRODUCT IMAGE (net weight on the bag/box) IS printed on the flyer, so reading it off the image is required; and a standard retail size CONFIRMED BY WebSearch for a packaged/processed product is a looked-up fact, not an invention. If a product is priced by piece or by package with no size printed anywhere (not in the text and not visible on the image) (e.g. "BONELESS SKINLESS CHICKEN BREAST, 3 piece — ONLY $8", "2 for $5"), use unit "un" with qty = the number of pieces/items (3 and 1 in those examples). This applies to meat too: "3 piece $8" -> price 8, qty 3, unit "un", category "meat". A wrong guessed weight is far worse than an honest per-piece price.
 - EXCEPTION to the above: berries (blueberries, raspberries, blackberries, strawberries when sold as a "pint") printed as "pint" with no weight -> a pint is a standard retail unit, use qty 340 unit "g". This is the one container size allowed to be converted without a printed weight.
-- Split combined deals: if one price covers multiple distinct products ("pork loin or chicken thighs $3.99/lb"), output one element per product, same price.
+- SPLIT COMBINED DEALS — one flyer ad very often covers SEVERAL distinct products under a single price. Output ONE ELEMENT PER PRODUCT, each with the same price, never a single merged element. Watch for these signals in the title: the words "OR" / "OU", commas listing brands, and several different packages shown in the photo.
+  · "GENERAL MILLS CEREAL, ACTIVIA TUBS OR OIKOS 4'S YOGURT — $3.49 ea" -> THREE elements: General Mills Cheerios cereal, Activia yogurt tub, Oikos 4-pack yogurt, each price 3.49.
+  · "TOSTITOS TORTILLA CHIPS OR MISS VICKIE'S CHIPS" -> two elements (one per brand).
+  · "pork loin or chicken thighs $3.99/lb" -> two elements.
+  Each split product gets its OWN name/origName and its OWN size: read each package's size from the ad text or its own photo, and look it up per product when absent (size rules above). Never copy one product's weight onto another. Only merge into one element when the ad is genuinely a single product with variety names ("selected varieties" of the same item).
 - Meat/fish/poultry items — including processed ones (breaded fish, nuggets, sausages, deli): category "meat" and infer the variant from the text/photo: skin (skin-on true / skinless false), bones (bone-in true / boneless false), frozen (true/false). Use your best judgment from wording like "skinless", "boneless", "frozen", "fresh", "back attached"; if truly undeterminable use false for frozen and your best visual guess for skin/bones. Non-meat items: frozen/bones/skin all null.
 - Skip anything that is not a grocery product you'd buy to eat or use in the kitchen/home: store banners, event ads, store hours, loyalty-points promos with no concrete product price, toys, clothing, electronics, kitchenware, pet food, garden. If the page turns out to be a pure advertisement with no priced groceries, return an empty array [].
 - If a price is unreadable, skip that product.${existingNames.length ? `
@@ -138,7 +161,9 @@ Rules:
 function extractProducts(imgPaths, storeName, existingNames, ignoredNames, whitelist, groups = []) {
   const claude = findClaude()
   log(`${storeName}: extracting ${imgPaths.length} page${imgPaths.length === 1 ? '' : 's'} with ${claude}`)
-  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPaths, existingNames, ignoredNames, whitelist, groups), '--allowedTools', 'Read', '--model', 'claude-haiku-4-5'], {
+  const out = execFileSync(claude, ['-p', EXTRACT_PROMPT(imgPaths, existingNames, ignoredNames, whitelist, groups), // WebSearch: standard retail sizes for packaged/processed products whose
+// size isn't printed in the ad (e.g. Oikos 4-pack = 400 g).
+'--allowedTools', 'Read,WebSearch', '--model', 'claude-haiku-4-5'], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     timeout: 30 * 60 * 1000,
@@ -323,7 +348,15 @@ if (!DRY_RUN && !env.FAMILY_PASSWORD && !existsSync(join(here, 'service-account.
 // The Thursday retry pass runs only the stores whose upcoming flyer wasn't up
 // on Wednesday. If none were deferred, there is nothing to do.
 let storesToRun = stores
-if (RETRY) {
+if (CUSTOM_URL) {
+  const known = stores.find((s) => CUSTOM_URL.toLowerCase().startsWith(s.url.toLowerCase()))
+  const slug = (CUSTOM_URL.match(/flyers-on-line\.com\/([^/?#]+)/i)?.[1] ?? 'Custom Flyer')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+  const name = CUSTOM_STORE || known?.name || slug
+  storesToRun = [{ name, url: CUSTOM_URL }]
+  log(`Custom flyer import: "${name}" <- ${CUSTOM_URL}`)
+} else if (RETRY) {
   const deferred = existsSync(PENDING_FILE) ? JSON.parse(readFileSync(PENDING_FILE, 'utf8')) : []
   storesToRun = stores.filter((s) => deferred.includes(s.name))
   if (!storesToRun.length) {

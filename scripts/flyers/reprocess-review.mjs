@@ -71,7 +71,7 @@ Rules — apply ALL of them:
 - found: true if you can locate the product and read a usable price. If you truly cannot find it on the page, set found=false and copy the earlier values.
 - MEMBER / LOYALTY PRICE — the shopper is a member of EVERY store. When the flyer shows a lower member/card price (labelled "MEMBER", "MEMBER PRICING", "with card", or a loyalty brand — Scene+, Moi, PC Optimum, More Rewards, AIR MILES) AND a higher regular price ("without Scene+ Card", "non-member", "non moi price"), ALWAYS use the lower MEMBER price. E.g. "MEMBER ONLY 11.99/lb · without Scene+ Card 12.99/lb" -> price 11.99.
 - PRICED BY WEIGHT — if a "/lb", " lb", "/kg" or " kg" appears next to the price (e.g. "12.99/lb  28.64/kg"), the product is sold BY WEIGHT: unit "lb" (qty 1) when "/lb" is shown, else "kg" (qty 1). NEVER output "un" for a product with a per-lb or per-kg price. Most fresh meat, deli and loose produce is priced this way.
-- Otherwise prefer a printed weight/volume (read it off the title OR the product image) with qty = that amount. Only when NO size and NO per-weight price exists anywhere -> unit "un", qty = piece count (1 if unknown). Berries sold as a "pint" -> qty 340 unit "g".
+- Otherwise prefer a printed weight/volume (read it off the title OR the product image) with qty = that amount. If no size is printed in the title OR on the product image, LOOK UP the standard Canadian retail size with the WebSearch tool (e.g. "Oikos 4 pack yogurt weight" -> 4 x 100 g = qty 400 unit "g"), using the pack count visible in the ad. Allowed for packaged/bottled groceries and PROCESSED meat/fish only — NEVER for fresh meat, poultry, fish or loose produce. Only when NO size, NO per-weight price and NO confident lookup exists -> unit "un", qty = piece count (1 if unknown). Berries sold as a "pint" -> qty 340 unit "g".
 - minQty — multi-buy ("2 for $5", "2/$2.50", "3/$10"): price = per-item price, minQty = the minimum count. Normal prices -> minQty null.
 - name: the REAL, specific product name (brand + product), e.g. "Angus Beef Outside Round Steak", "Christie Oreo Cookies" — NOT a vague generic like just "Cookies" or "Beef Steak". origName: the exact flyer wording.
 - Meat/fish/poultry: category "meat" with frozen/bones/skin inferred (skinless/boneless/fresh etc.); non-meat: those three are null.
@@ -81,7 +81,7 @@ ${existingNames.length ? `The user's existing item names (reuse an exact one via
 
 function reExtract(imgPath, entries, existingNames, groups) {
   const claude = findClaude()
-  const out = execFileSync(claude, ['-p', PROMPT(imgPath, entries, existingNames, groups), '--allowedTools', 'Read', '--model', MODEL], {
+  const out = execFileSync(claude, ['-p', PROMPT(imgPath, entries, existingNames, groups), '--allowedTools', 'Read,WebSearch', '--model', MODEL], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
     timeout: 30 * 60 * 1000,
