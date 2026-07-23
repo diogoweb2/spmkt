@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
 import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GROCERY_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import { ignoreItems } from '../lib/ignore'
-import { canMerge, mergeItems, suggestName, targetUnit, groupIds } from '../lib/merge'
+import { canMerge, mergeItems, suggestName, targetUnit, groupIds, searchIndex } from '../lib/merge'
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo, isComparable } from '../lib/analysis'
 import { buyTodayDeals } from '../lib/buytoday'
 import { effectivePrice } from '../lib/cashback'
@@ -153,10 +153,14 @@ export default function Home({ db, update, push }) {
   }
 
   const qNorm = q.trim().toLowerCase()
+  // Search matches a group by any of its shelf names too (§11c): typing "PC"
+  // finds the group "meatballs" when "PC meatballs" is one of its members.
+  const names = useMemo(() => searchIndex(db), [db])
+  const matches = (item) => !qNorm || (names.get(item.id) ?? item.name.toLowerCase()).includes(qNorm)
   const show = (d) =>
     !storesOff.has(d.store.id) &&
     (d.rating == null || ratingsOn.has(d.rating)) &&
-    (!qNorm || d.item.name.toLowerCase().includes(qNorm) || (d.rec.origName ?? '').toLowerCase().includes(qNorm)) &&
+    matches(d.item) &&
     (d.isMeat
       ? proc === 'all' || (proc === 'ultra') === d.ultra
       : !catsOff.has(d.gtype))
@@ -192,10 +196,9 @@ export default function Home({ db, update, push }) {
 
   // ---------- All items rows (the old Items tab, folded in) ----------
   const itemRows = useMemo(() => {
-    const query = qNorm
     const out = []
     for (const item of db.items) {
-      if (query && !item.name.toLowerCase().includes(query)) continue
+      if (qNorm && !(names.get(item.id) ?? item.name.toLowerCase()).includes(qNorm)) continue
       const recs = itemRecords(db, item.id)
       if (recs.length === 0) {
         out.push({ item, variant: '', label: '', recs: [], key: item.id + '|' })
@@ -212,7 +215,7 @@ export default function Home({ db, update, push }) {
       }
     }
     return out.sort((a, b) => (b.recs[0]?.ts ?? 0) - (a.recs[0]?.ts ?? 0))
-  }, [db, qNorm])
+  }, [db, qNorm, names])
 
   // ---------- selection helpers ----------
   const deals = view === 'deals'

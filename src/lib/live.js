@@ -9,6 +9,7 @@
 import { compress } from './photos'
 import { uid } from './db'
 import { GROCERY_TYPES } from './meat'
+import { findByName } from './merge'
 
 const MODEL = 'google/gemini-2.5-flash-lite'
 const UNITS = ['kg', 'g', 'lb', 'oz', 'L', 'ml', 'un']
@@ -36,6 +37,15 @@ const PROMPT = (existingNames) => `This is a photo of ONE supermarket product / 
 The user's existing items: ${JSON.stringify(existingNames)}
 
 Output ONLY a JSON object (no prose, no markdown fence).`
+
+// Names the model may reuse: every item name plus every shelf name already
+// folded into a merge group (`origName`) — returning a member name is how a
+// re-photographed product goes straight back into its group.
+function knownNames(db) {
+  const names = new Set((db.items ?? []).map((i) => i.name))
+  for (const r of db.records ?? []) if (r.origName) names.add(r.origName)
+  return [...names]
+}
 
 // Extract one shelf-label photo into a ready photoQueue-shaped entry
 // (without queuing it). Throws with a human-readable reason on any failure.
@@ -65,7 +75,7 @@ export async function extractLive(db, file, storeId) {
         {
           role: 'user',
           content: [
-            { type: 'text', text: PROMPT((db.items ?? []).map((i) => i.name)) },
+            { type: 'text', text: PROMPT(knownNames(db)) },
             { type: 'image_url', image_url: { url: dataUrl } },
           ],
         },
@@ -91,7 +101,9 @@ export async function extractLive(db, file, storeId) {
 
   const meat = r.category === 'meat'
   const itemName = String(r.name)
-  const match = (db.items ?? []).find((i) => i.name.toLowerCase() === itemName.toLowerCase())
+  // A shelf name already folded into a merge group resolves to that group, so
+  // re-photographing "PC meatballs" lands back inside "meatballs".
+  const match = findByName(db.items ?? [], db.records ?? [], itemName)
   const entry = {
     id: uid('p'),
     path: null, // never uploaded — nothing in Storage

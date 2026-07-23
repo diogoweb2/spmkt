@@ -4,7 +4,7 @@ import { GROCERY_TYPE_LABEL } from '../lib/meat'
 import { unitKind } from '../lib/units'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
-import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
+import { mergeSuggestions, mergeItems, suggestName, groupIds, findByName } from '../lib/merge'
 import { SuggestionList, MergeNameDialog } from './MergeSuggest'
 
 const ALL_UNITS = ['kg', 'lb', 'g', 'oz', 'L', 'ml', 'un']
@@ -186,7 +186,7 @@ function ReadyBody({ db, update, entry, onClose, onEdit, onSaved }) {
   const store = db.stores.find((s) => s.id === entry.storeId)
   const matched =
     db.items.find((i) => i.id === entry.matchedItemId) ??
-    db.items.find((i) => i.name.toLowerCase() === name.trim().toLowerCase())
+    findByName(db.items, db.records, name)
   const priceNum = parseFloat(price)
   const qtyNum = parseFloat(qty)
   const valid = name.trim() && priceNum > 0 && qtyNum > 0

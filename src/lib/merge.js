@@ -181,6 +181,36 @@ export function mergeItems(db, itemIds, name) {
   dropDuplicateFlyerRecords(db, survivor.id)
 }
 
+// Searchable text per item: its own name plus every shelf name (`origName`)
+// folded into it. Lets a search for "PC" find the group "meatballs" because
+// one of its records was logged as "PC meatballs". Lowercased, built once per
+// db so a search doesn't rescan every record per item.
+export function searchIndex(db) {
+  const index = new Map()
+  for (const i of db.items) index.set(i.id, i.name.toLowerCase())
+  for (const r of db.records) {
+    if (!r.origName) continue
+    const cur = index.get(r.itemId)
+    if (cur == null) continue
+    const name = r.origName.toLowerCase()
+    if (!cur.includes(name)) index.set(r.itemId, cur + ' | ' + name)
+  }
+  return index
+}
+
+// The item a shelf name belongs to: an item with that exact name, or the merge
+// group that already carries it as a member (`origName`). The second case is
+// what keeps a re-photographed "PC meatballs" inside the "meatballs" group
+// instead of splitting back out as its own product.
+export function findByName(items, records, name) {
+  const n = (name ?? '').trim().toLowerCase()
+  if (!n) return null
+  const exact = items.find((i) => i.name.toLowerCase() === n)
+  if (exact) return exact
+  const member = records.find((r) => (r.origName ?? '').toLowerCase() === n)
+  return (member && items.find((i) => i.id === member.itemId)) ?? null
+}
+
 // The distinct shelf names folded into a merge group: every `origName` its
 // records carry (the group's own name is not an origName). Each is a candidate
 // to split back out with `unmergeName`. Returns [{ origName, count }], most

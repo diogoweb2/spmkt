@@ -4,7 +4,7 @@ import { GROCERY_TYPE_LABEL } from '../lib/meat'
 import { photoUrl, removePhoto, applyEntry, entryItemId, deleteEntryImage } from '../lib/photos'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
-import { mergeSuggestions, mergeItems, suggestName, groupIds } from '../lib/merge'
+import { mergeSuggestions, mergeItems, suggestName, groupIds, findByName } from '../lib/merge'
 import { SuggestionList, MergeNameDialog } from '../components/MergeSuggest'
 import { flyerInfo } from '../lib/analysis'
 import FlyerLink from '../components/FlyerLink'
@@ -168,7 +168,7 @@ function ReadyCard({ entry, db, onApprove, onEdit, onDiscard }) {
   const meat = entry.category === 'meat'
   const matched =
     db.items.find((i) => i.id === entry.matchedItemId) ??
-    db.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
+    findByName(db.items, db.records, entry.itemName)
   // Look-alike products for this extraction (§15d): compared against the
   // matched item if there is one, otherwise the item this entry would create.
   const probe = matched ?? { id: null, name: entry.itemName, kind: unitKind(entry.unit) }

@@ -10,6 +10,7 @@ import { app, auth } from './firebase'
 import { uid } from './db'
 import { unitKind } from './units'
 import { guessMeatType } from './meat'
+import { findByName } from './merge'
 
 const storage = getStorage(app)
 
@@ -76,7 +77,7 @@ export function applyEntry(d, entry, newId = null) {
   const meat = entry.category === 'meat'
   let item =
     d.items.find((i) => i.id === entry.matchedItemId) ??
-    d.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
+    findByName(d.items, d.records, entry.itemName)
   if (!item) {
     item = {
       id: newId ?? uid('i'),
@@ -118,7 +119,14 @@ export function applyEntry(d, entry, newId = null) {
           flyerPage: entry.flyerPage ?? null,
           ...(entry.upcoming ? { upcoming: true } : {}),
         }
-      : { source: 'photo' }),
+      : {
+          // Photographed into an existing group (the shelf name is one of its
+          // members, or the user renamed): keep the shelf name on the record.
+          ...(entry.itemName && entry.itemName.toLowerCase() !== item.name.toLowerCase()
+            ? { origName: entry.itemName }
+            : {}),
+          source: 'photo',
+        }),
     ts: entry.ts,
   })
   d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== entry.id)
@@ -132,7 +140,7 @@ export function applyEntry(d, entry, newId = null) {
 export function entryItemId(db, entry) {
   const existing =
     db.items.find((i) => i.id === entry.matchedItemId) ??
-    db.items.find((i) => i.name.toLowerCase() === (entry.itemName ?? '').toLowerCase())
+    findByName(db.items, db.records, entry.itemName)
   return existing?.id ?? uid('i')
 }
 
