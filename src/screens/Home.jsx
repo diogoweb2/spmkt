@@ -80,6 +80,7 @@ export default function Home({ db, update, push }) {
   const [catsOff, setCatsOff] = useSessionState('home.catsOff', () => new Set(), { set: true })
   const [proc, setProc] = useSessionState('home.proc', 'all')
   const [sort, setSort] = useSessionState('home.sort', 'deal')
+  const [bestEver, setBestEver] = useSessionState('home.bestEver', false)
   const [q, setQ] = useSessionState('home.q', '')
 
   // ONE selection mode. Keys: item id in Deals view, `${itemId}|${variant}`
@@ -161,6 +162,9 @@ export default function Home({ db, update, push }) {
     !storesOff.has(d.store.id) &&
     (d.rating == null || ratingsOn.has(d.rating)) &&
     matches(d.item) &&
+    // 🎉 #1 only: keep just deals that are the cheapest price ever recorded
+    // for that item (the #1 rank badge). Deals with no rank are hidden.
+    (!bestEver || priceRank(db, d)?.rank === 1) &&
     (d.isMeat
       ? proc === 'all' || (proc === 'ultra') === d.ultra
       : !catsOff.has(d.gtype))
@@ -440,6 +444,14 @@ export default function Home({ db, update, push }) {
                 {RATING[r].label.replace(' deal', '')}
               </button>
             ))}
+            <button
+              className={`no-check${bestEver ? ' on' : ''}`}
+              style={{ marginLeft: 'auto' }}
+              title="Show only deals at their cheapest price ever (#1 in history)"
+              onClick={() => setBestEver(!bestEver)}
+            >
+              🎉 #1 only
+            </button>
           </Chips>
 
           {showMeat && MEAT_TYPES.some((t) => groups[t]?.length) && (
