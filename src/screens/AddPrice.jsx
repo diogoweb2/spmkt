@@ -165,6 +165,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
 
   // Append a brand-new record (the normal path, and "it's a new price").
   function appendRecord(itemId, meat) {
+    let adoptedKind = false
     update((d) => {
       d.records.push({
         id: uid('r'),
@@ -193,9 +194,22 @@ export default function AddPrice({ db, update, push, pop, view }) {
             }
           : {}),
       })
+      // Review edit offers all units (a `un` flyer/photo entry is exactly where
+      // a wrong kind shows up), so fix the item's kind here too — but only when
+      // no existing record disagrees, same guard as edit mode (§2).
+      const it = d.items.find((i) => i.id === itemId)
+      const newKind = unitKind(unit)
+      if (photoEntry && it && it.kind !== newKind) {
+        const othersAgree = d.records.every((r) => r.itemId !== itemId || unitKind(r.unit) === newKind)
+        if (othersAgree) {
+          it.kind = newKind
+          it.defaultUnit = unit
+          adoptedKind = true
+        }
+      }
       if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
     })
-    push({ name: 'item', itemId, fromSave: !byPiece })
+    push({ name: 'item', itemId, fromSave: adoptedKind || !byPiece })
   }
 
   // "I typed it wrong before": overwrite the previous record at this store.
@@ -324,7 +338,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
   const meatItem = (item ?? { category }).category === 'meat'
   const unitChoices = meatItem
     ? pkg ? KIND_UNITS.weight : ['kg', 'lb', 'un']
-    : editRec || !item ? ALL_UNITS : KIND_UNITS[item.kind]
+    : editRec || photoEntry || !item ? ALL_UNITS : KIND_UNITS[item.kind]
   if (!unitChoices.includes(unit)) setUnit(unitChoices.includes(store?.defaultUnit) ? store.defaultUnit : unitChoices[0])
   const byPiece = item && unitKind(unit) !== item.kind
 
