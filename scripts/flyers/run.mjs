@@ -62,6 +62,24 @@ const PENDING_FILE = join(here, 'pending-thursday.json')
 // later in the day than this week's (machine asleep at 9:30, manual re-run),
 // and a strict 8-day window would then skip the whole scheduled run.
 const WEEK_MS = 7 * 24 * 3600 * 1000
+// Cutoff for "this store's flyer is already imported". Flyer weeks run Thu→Wed
+// and next week's flyer goes up on Wednesday, so the earliest a store can have
+// been imported for the week a run targets is the Wednesday before it.
+// This must NOT be a rolling 7-day window: the Wednesday 10:00 cron never
+// clears a window opened by last week's import, which lands after 10:00, so
+// every store got skipped and none were deferred to Thursday either.
+const importCutoff = () => {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  // Most recent Thursday (today, when today is Thursday).
+  const isThursday = d.getDay() === 4
+  d.setDate(d.getDate() - ((d.getDay() - 4 + 7) % 7))
+  // Upcoming mode targets next week's flyer — except on Thursday, when the
+  // week has already flipped and the retry pass targets today's flyer week.
+  if (UPCOMING && !isThursday) d.setDate(d.getDate() + 7)
+  d.setDate(d.getDate() - 1)
+  return d.getTime()
+}
 const UNITS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un'] }
 
 // ---------- download ----------
@@ -449,12 +467,13 @@ for (const store of storesToRun) {
     let whitelist = []
     if (!DRY_RUN) {
       const { db } = await openFamilyDoc(env)
-      // Already imported this week? Skip before spending a download + tokens.
+      // Already imported the flyer week this run targets? Skip before spending
+      // a download + tokens.
       const s = db?.stores?.find((x) => x.name.toLowerCase() === store.name.toLowerCase())
       const last = s && db.records
         .filter((r) => r.source === 'flyer' && r.storeId === s.id)
         .reduce((max, r) => Math.max(max, r.ts), 0)
-      if (last && Date.now() - last < WEEK_MS && !FORCE) {
+      if (last && last >= importCutoff() && !FORCE) {
         log(`${store.name}: already imported ${new Date(last).toLocaleString()} — skipping (use --force to re-import)`)
         results.push({ name: store.name, skipped: true })
         continue
