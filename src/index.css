@@ -219,6 +219,13 @@ label.field .lbl, .lbl {
   color: var(--md-on-surface-variant); margin-bottom: 6px;
   letter-spacing: 0.02em;
 }
+/* How many deals a section header covers — the count sits in the header pill. */
+.sec-count {
+  display: inline-block; margin-left: 4px;
+  padding: 1px 7px; border-radius: 999px;
+  background: var(--md-surface-container); color: var(--md-on-surface-variant);
+  font-size: 11px; font-weight: 700; letter-spacing: 0;
+}
 input[type='text'], input[type='number'], input[type='password'], input[type='search'], select, textarea {
   width: 100%; padding: 13px 14px; font-size: 16px;
   border: 1px solid var(--md-outline); border-radius: 12px;

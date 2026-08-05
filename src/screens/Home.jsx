@@ -552,7 +552,7 @@ export default function Home({ db, update, push }) {
               has no picture. Same data, same order as the list below. */}
           {tiles && sections.map(({ key, label, list }) => (
             <div key={key} style={{ marginTop: 10 }}>
-              {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
+              {label && <div className="lbl" style={{ marginBottom: 4 }}>{label} <span className="sec-count">{list.length}</span></div>}
               <div className="deal-tiles">
                 {list.map((d) => (
                   <DealTile
@@ -573,7 +573,7 @@ export default function Home({ db, update, push }) {
           {!tiles && <div className="grid-2">
             {sections.map(({ key, label, list }) => (
               <div key={key} style={{ marginTop: 10 }}>
-                {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
+                {label && <div className="lbl" style={{ marginBottom: 4 }}>{label} <span className="sec-count">{list.length}</span></div>}
                 <div className="card list" style={{ padding: '2px 12px' }}>
                   {list.map((d) => {
                     const isSel = selected.includes(d.key)
