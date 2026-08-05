@@ -865,26 +865,45 @@ html[data-theme='dark'] .skeleton::after {
   aspect-ratio: 4 / 3;
   background: var(--md-surface);
   overflow: hidden;
+  position: relative;
 }
 .deal-tile-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* No picture: a short marker band, not an empty frame the size of a photo. */
 .deal-tile-img.none {
   aspect-ratio: auto;
-  height: 34px;
+  /* Tall enough that the rank / add overlays sit inside the band instead of
+     spilling onto the price line below it. */
+  height: 44px;
   display: grid;
   place-items: center;
   font-size: 17px;
   opacity: 0.35;
 }
+/* Dark scrim behind the top overlays so they stay legible over a bright crop. */
+.deal-tile-scrim {
+  position: absolute; left: 0; right: 0; top: 0; height: 46px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.38), transparent);
+  pointer-events: none;
+}
 .deal-tile-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; }
 .deal-tile-price { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
 .deal-tile-name { font-size: 14px; line-height: 1.25; }
 .deal-tile-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+/* Rank pill (left) and add button (right) share one 28px band at the top of
+   the tile so they read as a pair and never touch the card edge. */
 .deal-tile-add {
-  position: absolute; right: 6px; top: 6px;
-  width: 30px; height: 30px; border-radius: 999px;
+  position: absolute; right: 8px; top: 8px;
+  width: 28px; height: 28px; border-radius: 999px;
   display: grid; place-items: center;
+  font-size: 17px;
+  background: var(--md-surface);
+  border-width: 1px;
+  box-shadow: var(--md-shadow-1, 0 1px 3px rgba(0, 0, 0, 0.3));
+}
+.deal-tile-rank {
+  position: absolute; left: 8px; top: 8px; right: auto;
+  height: 28px; display: inline-flex; align-items: center;
+  padding: 0 9px; font-size: 11.5px;
   background: var(--md-surface);
   box-shadow: var(--md-shadow-1, 0 1px 3px rgba(0, 0, 0, 0.3));
 }
-.deal-tile-rank { position: absolute; left: 6px; top: 6px; background: var(--md-surface); }

@@ -912,6 +912,7 @@ function DealTile({ d, db, delta, pr, rvStatus, onOpen, onAdd }) {
       {img ? (
         <div className="deal-tile-img">
           <img src={img} alt="" loading="lazy" />
+          <div className="deal-tile-scrim" aria-hidden="true" />
         </div>
       ) : (
         <div className="deal-tile-img none" aria-hidden="true">
