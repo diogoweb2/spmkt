@@ -635,7 +635,7 @@ export default function Home({ db, update, push }) {
                             style={{ color: rankColor(pr.rank), borderColor: rankColor(pr.rank) }}
                             title={`#${pr.rank} cheapest of ${pr.total} prices in history`}
                           >
-                            #{pr.rank}{pr.rank === 1 ? '🎉' : ''}
+                            #{pr.rank}{pr.rank === 1 ? '🎉' : ''}<span className="rank-total">/{pr.total}</span>
                           </span>
                         )}
                         <div className="right">
@@ -932,8 +932,12 @@ function DealTile({ d, db, delta, pr, rvStatus, onOpen, onAdd }) {
         {{ pending: '…', ok: '✓', err: '!' }[rvStatus] ?? '+'}
       </span>
       {pr && (
-        <span className="price-rank deal-tile-rank" style={{ color: rankColor(pr.rank), borderColor: rankColor(pr.rank) }}>
-          #{pr.rank}{pr.rank === 1 ? '🎉' : ''}
+        <span
+          className="price-rank deal-tile-rank"
+          style={{ color: rankColor(pr.rank), borderColor: rankColor(pr.rank) }}
+          title={`#${pr.rank} cheapest of ${pr.total} prices in history`}
+        >
+          #{pr.rank}{pr.rank === 1 ? '🎉' : ''}<span className="rank-total">/{pr.total}</span>
         </span>
       )}
 

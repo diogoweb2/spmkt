@@ -190,6 +190,8 @@ h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
   padding: 3px 7px; border-radius: 999px;
   border: none; background: color-mix(in srgb, currentColor 14%, transparent);
 }
+/* "/12" — how many prices the rank is out of; dimmer than the rank itself. */
+.rank-total { opacity: 0.6; font-weight: 600; }
 .row.sel { background: var(--md-primary-container); border-radius: 12px; padding: 13px 10px; }
 .row.dim { opacity: 0.35; }
 .chev { color: var(--md-outline); font-size: 18px; }
