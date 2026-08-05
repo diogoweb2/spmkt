@@ -23,6 +23,17 @@ import { loadEnv, findClaude, openFamilyDoc, lastJsonArray, log, sendPush } from
 const here = dirname(fileURLToPath(import.meta.url))
 const BUCKET = 'spmkt-cc6fd.firebasestorage.app'
 
+// Sonnet at low effort, not Haiku. Haiku was the right call when this job
+// shared a budget with the whole-flyer import (§12) reading dozens of pages a
+// week — that import is retired, and this now reads a handful of hand-cropped
+// single deals a day, so the volume argument for the cheaper model is gone.
+// The flyer import had already found Haiku weak at exactly what matters here:
+// package sizes in small print, member vs regular price, and reusing an
+// existing item name correctly. A misread costs a manual fix in Review, which
+// is the work this whole pipeline exists to avoid.
+const MODEL = 'claude-sonnet-5'
+const EFFORT = 'low'
+
 const UNITS = ['kg', 'g', 'lb', 'oz', 'L', 'ml', 'un']
 const GROCERY_TYPES = ['produce', 'dairy', 'bakery', 'frozen', 'pantry', 'snacks', 'beverages', 'household', 'other']
 
@@ -119,7 +130,7 @@ export async function processPhotos(env, { dryRun = false } = {}) {
       const existingNames = (db.items ?? []).map((i) => i.name)
       const out = execFileSync(
         claude,
-        ['-p', PROMPT(files, existingNames), '--allowedTools', 'Read', '--model', 'claude-haiku-4-5'],
+        ['-p', PROMPT(files, existingNames), '--allowedTools', 'Read', '--model', MODEL, ...(EFFORT ? ['--effort', EFFORT] : [])],
         { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 10 * 60 * 1000 },
       )
       const results = lastJsonArray(out)
