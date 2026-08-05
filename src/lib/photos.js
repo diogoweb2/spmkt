@@ -30,14 +30,18 @@ export async function compress(file, maxDim = 1400, quality = 0.72) {
 }
 
 // Compress + upload one photo and queue it for processing. Returns the queue id.
-export async function addPhoto(update, file, storeId) {
+// `extra` rides along on the queue entry untouched by the processor, which only
+// writes the extracted fields — that's how a flyer crop (§17) keeps its
+// provenance (source 'flyer', validUntil, flyerUrl, flyerPage, upcoming) so the
+// record applyEntry() builds is indistinguishable from an imported flyer deal.
+export async function addPhoto(update, file, storeId, extra = {}) {
   const id = uid('p')
   const path = `photos/${auth.currentUser.uid}/${id}.jpg`
   const blob = await compress(file)
   await uploadBytes(ref(storage, path), blob, { contentType: 'image/jpeg' })
   update((d) => {
     d.photoQueue ??= []
-    d.photoQueue.push({ id, path, storeId: storeId ?? null, status: 'pending', ts: Date.now() })
+    d.photoQueue.push({ id, path, storeId: storeId ?? null, status: 'pending', ts: Date.now(), ...extra })
   })
   return id
 }

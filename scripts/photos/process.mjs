@@ -26,7 +26,7 @@ const BUCKET = 'spmkt-cc6fd.firebasestorage.app'
 const UNITS = ['kg', 'g', 'lb', 'oz', 'L', 'ml', 'un']
 const GROCERY_TYPES = ['produce', 'dairy', 'bakery', 'frozen', 'pantry', 'snacks', 'beverages', 'household', 'other']
 
-const PROMPT = (files, existingNames) => `Use the Read tool to open ${files.length === 1 ? 'this image file' : `these ${files.length} image files, one by one`} — each is a photo of ONE supermarket product / shelf price label, taken by a shopper. You CAN view images via the Read tool:
+const PROMPT = (files, existingNames) => `Use the Read tool to open ${files.length === 1 ? 'this image file' : `these ${files.length} image files, one by one`} — each shows ONE supermarket deal: either a photo of a shelf price label taken by a shopper, or a crop the shopper drew around a single ad block in a store flyer (§17). Both carry the same fields; a flyer crop is just printed rather than photographed, and its price is already the sale price. You CAN view images via the Read tool:
 ${files.map((f) => f.path).join('\n')}
 
 For EACH photo, extract the price entry:
@@ -41,6 +41,7 @@ For EACH photo, extract the price entry:
 - Meat only — frozen (true/false), bones (true/false), skin (true/false), best guess from the photo/product; processing: "natural" for whole/raw cuts, "ultra" for nuggets/sausages/bacon/deli/breaded/marinated.
 - Non-meat only — groceryType: one of ${JSON.stringify(GROCERY_TYPES)} (supermarket section).
 - minQty: ONLY for multi-buy prices ("2 for $5", "2/$2.50", "3/$10", "buy 2 or more"): the minimum count required, with price = the PER-ITEM deal price ("2/$2.50" -> price 1.25, minQty 2; a "or $1.50 ea" single price is ignored — the multi-buy is the deal). qty+unit still describe ONE item. Omit for normal prices.
+- Flyer crops specifically: a "SAVE UP TO 38%" / "1/2 PRICE" splash is NOT the price — the big number with ¢ superscript is (e.g. "7 99 /LB" -> price 7.99, qty 1, unit "lb"). When a per-lb price and its per-kg equivalent are both printed ("7.99/LB  17.61/KG"), use the lb one. The small print under the product name carries the package size and the variant words (skinless, bone-in, fresh, frozen, club size) — read it before answering.
 - note: anything important you could read that doesn't fit the fields (member price...), else omit.
 - If the photo is unreadable or shows no price, return {"file": "...", "error": "<short reason>"} for it.
 
@@ -137,8 +138,12 @@ export async function processPhotos(env, { dryRun = false } = {}) {
 
     await save(db)
     // Photos are only deleted after the extraction is safely saved.
+    // Flyer crops (§17) are the exception: they're small, and the Review card
+    // showing the actual ad block is how the user checks the price and size the
+    // extraction claims. The app deletes them on approve/discard
+    // (deleteEntryImage in src/screens/Review.jsx), so they don't accumulate.
     for (const entry of pending) {
-      if (entry.status === 'pending') continue
+      if (entry.status === 'pending' || entry.source === 'flyer') continue
       await bucket.file(entry.path).delete().catch(() => {})
     }
     log(`photos: ${ok}/${pending.length} ready for review`)

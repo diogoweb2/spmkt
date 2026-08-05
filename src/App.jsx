@@ -6,6 +6,7 @@ import Home from './screens/Home'
 import AddPrice from './screens/AddPrice'
 import ItemDetail from './screens/ItemDetail'
 import Review from './screens/Review'
+import Flyers from './screens/Flyers'
 import Settings from './screens/Settings'
 import Snackbar from './components/Snackbar'
 import StoreSheet from './components/StoreSheet'
@@ -20,7 +21,7 @@ import { toast } from './lib/toast'
 const STORE_CONFIRM_MS = 60 * 60 * 1000
 const STORE_CONFIRM_KEY = 'spmkt.storeConfirmedAt'
 
-// Navigation: three destinations (Home · Review · Settings) plus a center
+// Navigation: four destinations (Home · Flyers · Review · Settings) plus a center
 // ➕ FAB that opens an Android-style menu — Manual entry or Photo batch. The
 // pick is confirmed against the current store ("Where are you?"), then runs;
 // that confirmation is skipped for an hour after each pick. Bottom nav bar on
@@ -223,6 +224,7 @@ export default function App() {
   const destinations = (
     <>
       <NavBtn ico="🏠" label="Home" on={tab === 'home'} onClick={() => goTab('home')} />
+      <NavBtn ico="📄" label="Flyers" on={tab === 'flyers'} onClick={() => goTab('flyers')} />
       <NavBtn ico="📷" label="Review" on={tab === 'review'} badge={nReview} onClick={() => goTab('review')} />
       <NavBtn ico="⚙️" label="Settings" on={tab === 'settings'} onClick={() => goTab('settings')} />
     </>
@@ -268,6 +270,7 @@ export default function App() {
         {view.name === 'addPrice' && <AddPrice {...props} />}
         {view.name === 'item' && <ItemDetail {...props} />}
         {view.name === 'review' && <Review {...props} />}
+        {view.name === 'flyers' && <Flyers {...props} />}
         {view.name === 'settings' && <Settings {...props} onSignOut={() => signOutUser()} />}
       </div>
 

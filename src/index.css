@@ -403,10 +403,11 @@ input[type='range'] { width: 100%; accent-color: var(--md-primary); height: 32px
 .nav button {
   background: none; border: none; color: var(--md-on-surface-variant); cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  font-size: 11px; font-weight: 600; padding: 0 12px; position: relative;
+  /* padding kept tight: four destinations have to fit a 320px-wide phone */
+  font-size: 11px; font-weight: 600; padding: 0 6px; position: relative;
 }
 .nav .ico {
-  font-size: 20px; line-height: 1; padding: 5px 18px; border-radius: 999px;
+  font-size: 20px; line-height: 1; padding: 5px 14px; border-radius: 999px;
   transition: background 0.15s ease;
   position: relative;
 }
@@ -730,3 +731,63 @@ html[data-theme='dark'] .skeleton::after {
 @media (max-width: 899px) {
   .row .hover-reveal { opacity: 1; }
 }
+
+/* 📄 Flyers (§17): page grid + drag-to-crop page view */
+.flyer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.flyer-thumb {
+  position: relative;
+  padding: 0;
+  border: 1px solid var(--md-outline);
+  border-radius: var(--radius-m, 12px);
+  overflow: hidden;
+  background: var(--md-surface);
+  cursor: pointer;
+}
+.flyer-thumb img { display: block; width: 100%; height: auto; }
+.flyer-thumb-no {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.flyer-thumb-done {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  background: var(--md-primary);
+  color: var(--md-on-primary, #fff);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+/* Horizontal scroll at 2×/3× zoom; the page itself is the drawing surface. */
+.flyer-page-scroll { overflow-x: auto; margin-top: 8px; }
+.flyer-page {
+  position: relative;
+  /* touch-action none: a finger drag draws a box instead of scrolling away */
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+.flyer-page img { display: block; width: 100%; height: auto; pointer-events: none; }
+.flyer-box {
+  position: absolute;
+  border: 2px solid var(--md-primary);
+  background: rgba(22, 163, 74, 0.16);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.flyer-box.drawing { border-style: dashed; background: rgba(22, 163, 74, 0.1); }
+.flyer-box.saving { border-color: var(--md-outline); background: rgba(120, 120, 120, 0.2); }
+.flyer-box.failed { border-color: var(--md-error); background: rgba(220, 38, 38, 0.18); }
