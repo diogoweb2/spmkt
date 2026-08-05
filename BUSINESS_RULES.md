@@ -336,3 +336,10 @@ Photo capture is where duplicates are born ("Milk 3.25 bag" today, "Milk 3.25% B
 - **Crops must be made while the flyer is live.** Page URLs carry the current promotion id and stop resolving once next week's flyer goes up — which is why the crop is uploaded immediately rather than the coordinates being stored for later processing.
 - **The store is created on first crop** if the db doesn't have it yet. The id is minted before `update()` (React defers the mutator — §15c) and the push is guarded, so StrictMode can't add it twice.
 - The 🔜 **Next week** toggle loads `<store.url>/upcoming-flyer`; before it's published the screen says so rather than showing an empty grid.
+
+### Review progress (which pages are already done)
+
+- **Progress is stored per store** in `db.flyerReview` — `{pages, total, validUntil, ts}` keyed by store name, with the flyer's validity window **inside** the record. Keyed by store (not store+week) so a store chip can show its ✓ without that store's flyer being loaded; a record whose `validUntil` doesn't match the flyer on screen belongs to a previous week and is ignored, so next week's flyer starts from zero.
+- **A page is marked reviewed when it has held the middle of the viewport for 1.2s** (`DWELL_MS`), or as soon as a box is drawn on it. The dwell timer is the point: scrolling fast to reach page 20 must not claim pages 1-19 were read. Each page also has a **Mark reviewed / ✓ Reviewed** button to set or unset it by hand — for a page that's all ads (nothing to crop, no reason to dwell) or one marked by mistake.
+- **Cues**: reviewed thumbnails are dimmed and greyed with a ✓ so the *unreviewed* ones stand out (the grid answers "what's left?"); a progress bar above the grid reads "Reviewed 12/40 pages · 30%"; the page in the feed shows its ✓ state on the mark button.
+- **≥ 70% of pages reviewed counts as done** (`DONE_AT`) — the tail of a flyer is ads, pharmacy and general merchandise, so requiring every page would mean no flyer is ever finished. A done flyer turns its progress bar green, reads "✅ Reviewed 28/40 pages", and puts a **✅ on that store's chip**, so which stores are left is visible without opening them.

@@ -8,7 +8,7 @@
 // and cost a model call per page pair. Drawing the box IS the decision about
 // what to import, so the model only ever sees one deal at a time.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FLYER_STORES, loadFlyer, cropPage } from '../lib/flyers'
 import { addPhoto } from '../lib/photos'
 import { uid } from '../lib/db'
@@ -16,6 +16,33 @@ import { uid } from '../lib/db'
 // A drag shorter than this in either direction is a tap (or a slip while
 // scrolling), not a deal box — ignore it instead of queueing a sliver.
 const MIN_BOX = 0.02
+
+// Share of a flyer's pages that counts as "gone through it". Not 100%: the
+// tail of a flyer is pharmacy, general merchandise and ads, so demanding every
+// page would mean no flyer is ever done.
+const DONE_AT = 0.7
+
+// How long a page has to hold the middle of the viewport before it counts as
+// reviewed. Long enough that scrolling through to reach page 20 doesn't claim
+// pages 1-19 were read, short enough that actually looking at one marks it.
+const DWELL_MS = 1200
+
+// db.flyerReview is keyed by STORE NAME, with the flyer's validity window
+// stored inside the record — so a store chip can show its ✓ without that
+// store's flyer being loaded (its week is unknown until it's fetched). A
+// record whose `validUntil` doesn't match the flyer on screen belongs to a
+// previous week and is ignored: next week's flyer starts from zero.
+const sameFlyer = (rec, validUntil) => !!rec && (rec.validUntil ?? null) === (validUntil ?? null)
+
+// Progress for one flyer record: {seen, total, pct, done}. Not exported —
+// keeping this file components-only is what lets fast refresh work.
+function reviewProgress(rec) {
+  const total = rec?.total ?? 0
+  const seen = rec?.pages?.length ?? 0
+  if (!total) return { seen, total: 0, pct: 0, done: false }
+  const pct = seen / total
+  return { seen, total, pct, done: pct >= DONE_AT }
+}
 
 export default function Flyers({ db, update }) {
   const [store, setStore] = useState(FLYER_STORES[0])
@@ -61,7 +88,49 @@ export default function Flyers({ db, update }) {
     return id
   }
 
+  // Which pages of the flyer on screen have been reviewed, and the progress
+  // that drives the ✓ cues. Keyed per store+week and kept in the db, so
+  // closing the app mid-flyer doesn't lose the place.
+  const stored = db.flyerReview?.[store.name]
+  const rec = flyer && sameFlyer(stored, flyer.validUntil) ? stored : null
+  const reviewed = useMemo(() => new Set(rec?.pages ?? []), [rec])
+  const progress = reviewProgress(rec ? { ...rec, total: flyer.pages.length } : null)
+
+  // A page counts as reviewed once it has held the middle of the viewport for
+  // a moment (CropPage's dwell timer) — scrolling past at speed doesn't mark
+  // it — or as soon as a box is drawn on it.
+  const markReviewed = useCallback(
+    (pageNo) => {
+      if (!flyer) return
+      update((d) => {
+        d.flyerReview ??= {}
+        const cur = d.flyerReview[store.name]
+        // A record from a previous week is replaced, not extended.
+        const base = sameFlyer(cur, flyer.validUntil) ? cur : { pages: [] }
+        if (base.pages.includes(pageNo)) return
+        d.flyerReview[store.name] = {
+          pages: [...base.pages, pageNo],
+          total: flyer.pages.length,
+          validUntil: flyer.validUntil ?? null,
+          ts: Date.now(),
+        }
+      })
+    },
+    [flyer, store.name, update],
+  )
+
+  const toggleReviewed = (pageNo) => {
+    if (!flyer) return
+    if (!reviewed.has(pageNo)) return markReviewed(pageNo)
+    update((d) => {
+      const cur = d.flyerReview?.[store.name]
+      if (!cur) return
+      d.flyerReview[store.name] = { ...cur, pages: cur.pages.filter((p) => p !== pageNo) }
+    })
+  }
+
   const queueBox = async (pageNo, box) => {
+    markReviewed(pageNo)
     const localId = uid('b')
     setQueued((q) => [...q, { id: localId, page: pageNo, box, status: 'saving' }])
     try {
@@ -87,11 +156,19 @@ export default function Flyers({ db, update }) {
       <h1>📄 Flyers</h1>
 
       <div className="chips">
-        {FLYER_STORES.map((s) => (
-          <button key={s.name} className={`chip${s.name === store.name ? ' on' : ''}`} onClick={() => setStore(s)}>
-            {s.name}
-          </button>
-        ))}
+        {FLYER_STORES.map((s) => {
+          // ✅ on a store whose flyer has already been gone through — visible
+          // without opening it, so it's obvious which stores are left. Uses
+          // that store's own stored record; only the open store's record is
+          // week-checked against the flyer actually on screen.
+          const p = reviewProgress(s.name === store.name ? (rec ? { ...rec, total: flyer.pages.length } : null) : db.flyerReview?.[s.name])
+          return (
+            <button key={s.name} className={`chip${s.name === store.name ? ' on' : ''}`} onClick={() => setStore(s)}>
+              {p.done ? '✅ ' : ''}
+              {s.name}
+            </button>
+          )
+        })}
       </div>
 
       <div className="chips">
@@ -113,10 +190,25 @@ export default function Flyers({ db, update }) {
       {loading && <p className="muted small">Loading the {store.name} flyer…</p>}
       {error && <p className="muted small">{error}</p>}
 
+      {/* Review progress: how much of this flyer has been gone through, and
+          whether it counts as done (≥70% — the tail is ads and pharmacy). */}
+      {flyer && (
+        <div className={`flyer-progress${progress.done ? ' done' : ''}`}>
+          <div className="flyer-progress-bar">
+            <span style={{ width: `${Math.min(100, Math.round(progress.pct * 100))}%` }} />
+          </div>
+          <span className="muted small">
+            {progress.done ? '✅ Reviewed' : 'Reviewed'} {progress.seen}/{flyer.pages.length} pages
+            {progress.done ? '' : ` · ${Math.round(progress.pct * 100)}%`}
+          </span>
+        </div>
+      )}
+
       {flyer && page == null && (
         <PageGrid
           pages={flyer.pages}
           queued={queued}
+          reviewed={reviewed}
           onPick={(n) => {
             setPage(n)
             setZoom(1)
@@ -131,7 +223,10 @@ export default function Flyers({ db, update }) {
           zoom={zoom}
           setZoom={setZoom}
           queued={queued}
+          reviewed={reviewed}
           onBox={queueBox}
+          onReviewed={markReviewed}
+          onToggleReviewed={toggleReviewed}
           onBack={() => setPage(null)}
         />
       )}
@@ -141,17 +236,21 @@ export default function Flyers({ db, update }) {
 
 // Thumbnail grid: every page of the flyer, with a count of the boxes already
 // drawn on each so a long flyer stays navigable across sittings.
-function PageGrid({ pages, queued, onPick }) {
+function PageGrid({ pages, queued, reviewed, onPick }) {
   return (
     <div className="flyer-grid">
       {pages.map((url, i) => {
         const n = i + 1
         const done = queued.filter((b) => b.page === n && b.status === 'done').length
+        // Reviewed pages are dimmed with a ✓ so the unreviewed ones are what
+        // stands out — the grid answers "what's left?" at a glance.
+        const seen = reviewed.has(n)
         return (
-          <button key={url} className="flyer-thumb" onClick={() => onPick(n)}>
+          <button key={url} className={`flyer-thumb${seen ? ' seen' : ''}`} onClick={() => onPick(n)}>
             <img src={url} alt={`Page ${n}`} loading="lazy" />
             <span className="flyer-thumb-no">{n}</span>
             {done > 0 && <span className="flyer-thumb-done">✓ {done}</span>}
+            {seen && done === 0 && <span className="flyer-thumb-seen">✓</span>}
           </button>
         )
       })}
@@ -164,7 +263,7 @@ function PageGrid({ pages, queued, onPick }) {
 // 40-page flyer is one long scroll instead of 40 taps on ‹ ›. Pages are only
 // ever appended — going back up is just scrolling, and a box already drawn
 // stays where it was drawn.
-function PageCropper({ pages, from, zoom, setZoom, queued, onBox, onBack }) {
+function PageCropper({ pages, from, zoom, setZoom, queued, reviewed, onBox, onReviewed, onToggleReviewed, onBack }) {
   // How many pages after `from` are mounted. The sentinel bumps it as the user
   // reaches the bottom; capped at the last page of the flyer.
   const [count, setCount] = useState(1)
@@ -219,10 +318,14 @@ function PageCropper({ pages, from, zoom, setZoom, queued, onBox, onBack }) {
                 url={pages[n - 1]}
                 page={n}
                 boxes={queued.filter((b) => b.page === n)}
+                seen={reviewed.has(n)}
                 onBox={(box) => onBox(n, box)}
-                // setCurrent, not a closure: an inline arrow would be a new
-                // function every render and re-run the observer effect each time
+                // setCurrent / onReviewed / onToggleReviewed are stable
+                // references: an inline arrow would be a new function every
+                // render and re-run the observer effect each time
                 onVisible={setCurrent}
+                onDwell={onReviewed}
+                onToggleReviewed={onToggleReviewed}
               />
             )
           })}
@@ -245,21 +348,35 @@ function PageCropper({ pages, from, zoom, setZoom, queued, onBox, onBack }) {
 // of scrolling. Coordinates are normalized against the rendered image box, so
 // they stay correct at any zoom and the crop is taken from the full-resolution
 // image.
-function CropPage({ url, page, boxes, onBox, onVisible }) {
+function CropPage({ url, page, boxes, seen, onBox, onVisible, onDwell, onToggleReviewed }) {
   const wrapRef = useRef(null)
   const [drag, setDrag] = useState(null) // {x0, y0, x, y} normalized
 
   // Report this page as "current" while it owns the middle of the viewport, so
-  // the header page number follows the scroll.
+  // the header page number follows the scroll — and mark it reviewed once it
+  // has held that spot for a moment. The dwell timer is the point: scrolling
+  // fast through a flyer to reach page 20 shouldn't claim pages 1-19 were read.
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
-    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && onVisible(page), {
-      rootMargin: '-45% 0px -45% 0px',
-    })
+    let timer = null
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onVisible(page)
+          timer = setTimeout(() => onDwell(page), DWELL_MS)
+        } else {
+          clearTimeout(timer)
+        }
+      },
+      { rootMargin: '-45% 0px -45% 0px' },
+    )
     io.observe(el)
-    return () => io.disconnect()
-  }, [onVisible, page])
+    return () => {
+      clearTimeout(timer)
+      io.disconnect()
+    }
+  }, [onVisible, onDwell, page])
 
   const norm = (e) => {
     const r = wrapRef.current.getBoundingClientRect()
@@ -299,9 +416,22 @@ function CropPage({ url, page, boxes, onBox, onVisible }) {
   }
 
   return (
-    <div ref={wrapRef} className="flyer-page" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+    <div ref={wrapRef} className={`flyer-page${seen ? ' seen' : ''}`} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
       <img src={url} alt={`Page ${page}`} draggable={false} />
       <span className="flyer-page-no">{page}</span>
+      {/* Tap to mark reviewed / unreviewed by hand — for a page that's all ads
+          (nothing to crop, no reason to dwell) or one marked by mistake. */}
+      <button
+        className={`flyer-page-seen${seen ? ' on' : ''}`}
+        title={seen ? 'Reviewed — tap to unmark' : 'Mark this page reviewed'}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggleReviewed(page)
+        }}
+      >
+        {seen ? '✓ Reviewed' : 'Mark reviewed'}
+      </button>
       {boxes.map((b) => (
         <span
           key={b.id}
