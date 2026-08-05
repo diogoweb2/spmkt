@@ -93,6 +93,13 @@ function parseValidUntil(html) {
   return isNaN(dt) ? null : dt.getTime()
 }
 
+// Cost cap: a flyer's deals are front-loaded (the first pages are the meat and
+// produce features; the tail is ads, pharmacy and general merchandise), while
+// every extra page costs another Claude call. So we only ever read the FIRST
+// MAX_PAGES pages of a flyer — Superstore's 39-page book was the bulk of the
+// weekly spend for very few deals. Override with --max-pages N (0 = no cap).
+const MAX_PAGES = argValue('--max-pages') != null ? Number(argValue('--max-pages')) : 10
+
 async function downloadPages(store, dir, url) {
   const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
   if (!res.ok) throw new Error(`fetch ${url}: HTTP ${res.status}`)
@@ -104,8 +111,14 @@ async function downloadPages(store, dir, url) {
   // the order they appear in the HTML (deduped: each page is referenced twice).
   // Shared with reprocess-review.mjs so both number the pages identically
   // (it dedupes on the URL without its ?v= cachebuster — see shared.mjs).
-  const urls = flyerImageUrls(html)
-  if (!urls.length) throw new Error(`no flyer page images found at ${url}`)
+  const allUrls = flyerImageUrls(html)
+  if (!allUrls.length) throw new Error(`no flyer page images found at ${url}`)
+  // Head of the flyer only (see MAX_PAGES). Slicing the head keeps page
+  // numbering intact: page N is still the Nth page of the real flyer.
+  const urls = MAX_PAGES > 0 ? allUrls.slice(0, MAX_PAGES) : allUrls
+  if (urls.length < allUrls.length) {
+    log(`${store.name}: capping at first ${urls.length} of ${allUrls.length} pages`)
+  }
   const files = []
   for (const [i, imgUrl] of urls.entries()) {
     try {
