@@ -12,7 +12,7 @@ const CATEGORIES = [
   { id: 'other', label: '📦 Other' },
 ]
 
-const ALL_UNITS = ['kg', 'lb', 'g', 'oz', 'L', 'ml', 'un']
+const ALL_UNITS = ['kg', 'lb', 'g', 'oz', 'L', 'ml', 'un', 'pint']
 
 // Store-mode add flow (BUSINESS_RULES §9): search-first; every match shows
 // what YOU already logged at THIS store (price + date, pinned first) plus the

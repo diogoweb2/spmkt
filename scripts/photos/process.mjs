@@ -41,8 +41,8 @@ const EFFORT = 'low'
 // than it saves. `--review` restores the old approve-every-card behaviour.
 const AUTO_APPROVE = !process.argv.includes('--review')
 
-const UNITS = ['kg', 'g', 'lb', 'oz', 'L', 'ml', 'un']
-const KINDS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un'] }
+const UNITS = ['kg', 'g', 'lb', 'oz', 'L', 'ml', 'un', 'pint']
+const KINDS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un', 'pint'] }
 const kindOf = (unit) => Object.keys(KINDS).find((k) => KINDS[k].includes(unit))
 const GROCERY_TYPES = ['produce', 'dairy', 'bakery', 'frozen', 'pantry', 'snacks', 'beverages', 'household', 'other']
 
@@ -57,6 +57,7 @@ For EACH photo, extract the price entry:
   * price per lb/kg label ("/lb", "/kg" — e.g. "12.99/lb  28.64/kg") -> qty 1, unit "lb"/"kg". NEVER use "un" when a per-lb or per-kg price is shown.
   * package with printed weight/volume (750 g, 2 L...) -> qty = that amount, unit g/kg/ml/L.
   * priced by piece with NO weight printed -> qty = piece count, unit "un". NEVER invent a weight.
+  * berries in a clamshell/basket (blueberries, raspberries, blackberries, strawberries) -> unit "pint", NEVER "un" and never grams: the shopper buys these by the container. One pint = 340 g, so qty = printed grams / 340 rounded to 2 decimals (340 g -> qty 1, 170 g -> 0.5, 510 g -> 1.5, 2 lb / 907 g -> 2.67); no size printed, or labelled "pint"/"1 pt"/"dry pint" -> qty 1.
 - category: "meat" for meat/poultry/fish/seafood (fresh, frozen or processed), else "other".
 - Meat only — frozen (true/false), bones (true/false), skin (true/false), best guess from the photo/product; processing: "natural" for whole/raw cuts, "ultra" for nuggets/sausages/bacon/deli/breaded/marinated.
 - Non-meat only — groceryType: one of ${JSON.stringify(GROCERY_TYPES)} (supermarket section).

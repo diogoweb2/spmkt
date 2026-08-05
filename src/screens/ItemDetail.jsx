@@ -4,7 +4,7 @@ import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
   variantKey, variantLabel, flyerInfo, isComparable,
 } from '../lib/analysis'
-import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel } from '../lib/units'
+import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel, unitKind } from '../lib/units'
 import { effectivePrice } from '../lib/cashback'
 import { addToRvList } from '../lib/rvlist'
 import { toast } from '../lib/toast'
@@ -86,7 +86,10 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const members = mergedMembers(db, item.id)
 
   const wu = db.displayWeightUnit ?? 'lb'
-  const fmt = (n) => fmtDisplay(n, item.kind, wu)
+  // A count item priced by the container (a pint of blueberries) reads
+  // "/ pint" rather than the generic "/ unit"; taken from its latest record.
+  const cu = latest && unitKind(latest.unit) === 'count' ? latest.unit : undefined
+  const fmt = (n) => fmtDisplay(n, item.kind, wu, cu)
 
   const qn = q.trim().toLowerCase()
   const matchRec = (rec) => {
@@ -134,7 +137,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
       await addToRvList({
         storeName: store.name,
         itemName: item.name,
-        priceLabel: fmtDisplay(norm, item.kind, wu),
+        priceLabel: fmtDisplay(norm, item.kind, wu, cu),
         validUntil: rec.validUntil ?? undefined,
       })
       setRvState((s) => ({ ...s, [store.id]: undefined }))
@@ -205,7 +208,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
             </h1>
           )}
           <span className="muted small">
-            prices shown per {displayUnitLabel(item.kind, wu)} · <PhotoLink name={item.name} />
+            prices shown per {displayUnitLabel(item.kind, wu, cu)} · <PhotoLink name={item.name} />
           </span>
         </div>
         {item.kind === 'weight' && <UnitToggle db={db} update={update} />}
@@ -383,7 +386,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
             </div>
           )}
 
-          <MonthlyChart recs={recs} item={item} kind={item.kind} weightUnit={wu} db={db} />
+          <MonthlyChart recs={recs} item={item} kind={item.kind} weightUnit={wu} unit={cu} db={db} />
         </div>
 
         <div>

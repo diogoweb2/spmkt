@@ -10,12 +10,16 @@ export const UNITS = {
   L: { kind: 'volume', toBase: 1000, label: 'L' },
   ml: { kind: 'volume', toBase: 1, label: 'ml' },
   un: { kind: 'count', toBase: 1, label: 'unit' },
+  // A pint is a produce container (blueberries, raspberries...), not a real
+  // volume: nothing prints its weight, so it only compares pint-to-pint. It
+  // normalizes like any other count unit — price per container.
+  pint: { kind: 'count', toBase: 1, label: 'pint' },
 }
 
 export const KIND_UNITS = {
   weight: ['kg', 'lb', 'g', 'oz'],
   volume: ['L', 'ml'],
-  count: ['un'],
+  count: ['un', 'pint'],
 }
 
 export const KIND_LABEL = {
@@ -51,10 +55,12 @@ export function fmtNorm(n, kind) {
 // Display prices the way supermarkets show them: $/lb or $/kg for weight
 // (user preference), $/L for volume, $/unit for count. `n` is the internal
 // normalized price (per 100 g / 100 ml / unit).
-export function displayUnitLabel(kind, weightUnit = 'lb') {
+// `unit` is optional: pass the record's unit so a count item priced by the
+// container reads "/ pint" instead of the generic "/ unit".
+export function displayUnitLabel(kind, weightUnit = 'lb', unit) {
   if (kind === 'weight') return weightUnit
   if (kind === 'volume') return 'L'
-  return 'unit'
+  return UNITS[unit]?.kind === 'count' ? UNITS[unit].label : 'unit'
 }
 
 export function toDisplay(n, kind, weightUnit = 'lb') {
@@ -64,17 +70,17 @@ export function toDisplay(n, kind, weightUnit = 'lb') {
   return n
 }
 
-export function fmtDisplay(n, kind, weightUnit = 'lb') {
+export function fmtDisplay(n, kind, weightUnit = 'lb', unit) {
   const d = toDisplay(n, kind, weightUnit)
   if (d == null) return '—'
   const price = d < 0.1 ? d.toFixed(3) : d.toFixed(2)
-  return `$${price} / ${displayUnitLabel(kind, weightUnit)}`
+  return `$${price} / ${displayUnitLabel(kind, weightUnit, unit)}`
 }
 
 export function fmtQty(qty, unit) {
   const u = UNITS[unit]
   if (!u) return `${qty}`
-  if (u.kind === 'count') return qty === 1 ? '1 unit' : `${qty} units`
+  if (u.kind === 'count') return qty === 1 ? `1 ${u.label}` : `${qty} ${u.label}s`
   return `${qty} ${u.label}`
 }
 

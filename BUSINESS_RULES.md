@@ -38,13 +38,14 @@ Stored in Firestore (project `spmkt-cc6fd`): each user's entire db is a single d
 
 ## 2. Units & normalization
 
-- Supported units: `kg, g, lb, oz` (weight) · `L, ml` (volume) · `un` (count). Conversions: 1 lb = 453.592 g, 1 oz = 28.3495 g.
+- Supported units: `kg, g, lb, oz` (weight) · `L, ml` (volume) · `un`, `pint` (count). Conversions: 1 lb = 453.592 g, 1 oz = 28.3495 g.
+- **`pint`** is the berry container (blueberries, raspberries, blackberries, clamshell strawberries), not a real volume: nothing useful is printed on it, so it normalizes like any count unit (price per container) and only compares pint-to-pint. **1 pint = 340 g** is the conversion the extractors use to turn a printed clamshell size into pints (340 g → qty 1, 170 g → 0.5, 2 lb → 2.67); berries priced per lb/kg stay weight records. Count prices display as **$/pint** wherever the record's unit is known (deal tiles and rows, product page, monthly chart), else the generic $/unit. Migration of existing berry history: `scripts/flyers/berries-to-pint.mjs`.
 - **All comparison math normalizes internally to price per 100 g (weight), per 100 ml (volume), or per unit (count).** This makes 6 L milk bags vs 2 L cartons, and 1 kg vs 500 g cereal, directly comparable.
 - An item's `kind` is fixed at creation; later entries for the item may only use units of the same kind. **Exception — edit mode (§1):** editing an existing record offers **all** units, so a kind picked wrongly at creation ("un" on a 2 L juice) can be corrected. On save the item adopts the new `kind`/`defaultUnit` **only if every other record of that item already agrees with it**; if any sibling record disagrees, the record's unit still changes but the item's `kind` is left alone (the edited record simply becomes reference-only, §3) rather than stranding all the siblings.
 - **Exception — Review edit (§15):** editing a Review-inbox entry (📷 photo or an unsized `un` flyer deal) before approving it also offers **all** units, with the same adoption guard: on save the matched item adopts the new `kind`/`defaultUnit` if every existing record of that item agrees, otherwise the saved record is simply reference-only (§3). Review is the main place a wrong kind surfaces (a `un`-parked deal, or a 12-pack of sparkling water on a volume item), so it must be fixable there.
 
 ### Display units (what the user sees)
-- Weight prices display as **$/lb or $/kg** (persisted as `db.displayWeightUnit`, default `lb`; toggled top-right of Items list and product page, or via the global ⚖️ pill next to the 💳 pill above the bottom nav). Volume displays as **$/L**, count as **$/unit**.
+- Weight prices display as **$/lb or $/kg** (persisted as `db.displayWeightUnit`, default `lb`; toggled top-right of Items list and product page, or via the global ⚖️ pill next to the 💳 pill above the bottom nav). Volume displays as **$/L**, count as **$/unit** — or **$/pint** when the record being shown is in pints (§4).
 - Display is conversion-only; all logic still runs on normalized per-100g/100ml values.
 
 ### Default unit & quantity when adding a price

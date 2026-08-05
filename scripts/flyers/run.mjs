@@ -80,7 +80,7 @@ const importCutoff = () => {
   d.setDate(d.getDate() - 1)
   return d.getTime()
 }
-const UNITS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un'] }
+const UNITS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un', 'pint'] }
 
 // ---------- download ----------
 
@@ -167,7 +167,7 @@ Rules:
 - The item kinds must stay consistent: weight units (kg/g/lb/oz) only when a weight is printed or the price is per weight.
 - Packaged/boxed products (frozen meat boxes, nuggets, wings, breaded fish, burgers, ice cream tubs...): ALWAYS use the printed package size as qty+unit (e.g. 750 g box -> qty 750 unit "g"; 1.1 kg -> qty 1.1 unit "kg") so different box sizes are comparable across stores. If a multi-product deal shows a different size per product, use each product's own size.
 - NEVER invent or estimate a weight/volume — but a size printed ON THE PRODUCT IMAGE (net weight on the bag/box) IS printed on the flyer, so reading it off the image is required; and a standard retail size CONFIRMED BY WebSearch for a packaged/processed product is a looked-up fact, not an invention. If a product is priced by piece or by package with no size printed anywhere (not in the text and not visible on the image) (e.g. "BONELESS SKINLESS CHICKEN BREAST, 3 piece — ONLY $8", "2 for $5"), use unit "un" with qty = the number of pieces/items (3 and 1 in those examples). This applies to meat too: "3 piece $8" -> price 8, qty 3, unit "un", category "meat". A wrong guessed weight is far worse than an honest per-piece price.
-- EXCEPTION to the above: berries (blueberries, raspberries, blackberries, strawberries when sold as a "pint") printed as "pint" with no weight -> a pint is a standard retail unit, use qty 340 unit "g". This is the one container size allowed to be converted without a printed weight.
+- BERRIES ARE SOLD BY THE PINT — blueberries, raspberries, blackberries and clamshell strawberries use unit "pint", never "un" and never grams: the shopper buys them by the container. One pint = 340 g, so qty = printed grams / 340 rounded to 2 decimals (340 g -> qty 1, 170 g -> 0.5, 510 g -> 1.5, 2 lb / 907 g -> 2.67); printed as "pint" or with no size at all -> qty 1. Berries priced per lb/kg still follow the by-weight rule.
 - SPLIT COMBINED DEALS — one flyer ad very often covers SEVERAL distinct products under a single price. Output ONE ELEMENT PER PRODUCT, each with the same price, never a single merged element. Watch for these signals in the title: the words "OR" / "OU", commas listing brands, and several different packages shown in the photo.
   · "GENERAL MILLS CEREAL, ACTIVIA TUBS OR OIKOS 4'S YOGURT — $3.49 ea" -> THREE elements: General Mills Cheerios cereal, Activia yogurt tub, Oikos 4-pack yogurt, each price 3.49.
   · "TOSTITOS TORTILLA CHIPS OR MISS VICKIE'S CHIPS" -> two elements (one per brand).

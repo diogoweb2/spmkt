@@ -18,7 +18,7 @@ function monthlyAverages(recs, item, db) {
   return buckets.map((b) => (b.n ? { avg: b.sum / b.n, n: b.n } : null))
 }
 
-export default function MonthlyChart({ recs, item, kind, weightUnit, db }) {
+export default function MonthlyChart({ recs, item, kind, weightUnit, unit, db }) {
   const [sel, setSel] = useState(null)
   const months = monthlyAverages(recs, item, db)
   const withData = months.filter(Boolean)
@@ -105,8 +105,8 @@ export default function MonthlyChart({ recs, item, kind, weightUnit, db }) {
       </svg>
       <p className="muted small" style={{ marginTop: 8, minHeight: 18 }}>
         {sel != null && months[sel]
-          ? `${MONTHS[sel]}: avg ${fmtDisplay(months[sel].avg, kind, weightUnit)} · ${months[sel].n} record${months[sel].n === 1 ? '' : 's'}`
-          : `per ${displayUnitLabel(kind, weightUnit)} · tap a bar for details`}
+          ? `${MONTHS[sel]}: avg ${fmtDisplay(months[sel].avg, kind, weightUnit, unit)} · ${months[sel].n} record${months[sel].n === 1 ? '' : 's'}`
+          : `per ${displayUnitLabel(kind, weightUnit, unit)} · tap a bar for details`}
       </p>
     </div>
   )
