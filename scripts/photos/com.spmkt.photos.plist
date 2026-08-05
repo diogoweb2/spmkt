@@ -14,9 +14,9 @@
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>9</integer>
+    <integer>7</integer>
     <key>Minute</key>
-    <integer>20</integer>
+    <integer>0</integer>
   </dict>
   <key>StandardOutPath</key>
   <string>/Users/diogolopes/Library/Logs/spmkt-photos.log</string>

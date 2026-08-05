@@ -18,7 +18,7 @@ import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { loadEnv, findClaude, openFamilyDoc, lastJsonArray, log } from '../flyers/shared.mjs'
+import { loadEnv, findClaude, openFamilyDoc, lastJsonArray, log, sendPush } from '../flyers/shared.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const BUCKET = 'spmkt-cc6fd.firebasestorage.app'
@@ -86,11 +86,13 @@ export async function processPhotos(env, { dryRun = false } = {}) {
 
   const pending = (db.photoQueue ?? []).filter((p) => p.status === 'pending')
   if (!pending.length) {
-    // Still worth a run: expired deal images have to be cleaned up whether or
-    // not anything new was photographed.
+    // Still worth a run: expired deal images have to be cleaned up, and the
+    // Review inbox still needs its reminder — the usual morning case is
+    // yesterday's crops already extracted and waiting to be approved.
     log('photos: nothing to process')
     const purged = await purgeExpiredImages(db, bucket, dryRun)
     if (purged) await save(db)
+    if (!dryRun) await remindReview(env, db)
     return 0
   }
 
@@ -179,10 +181,30 @@ export async function processPhotos(env, { dryRun = false } = {}) {
       await bucket.file(entry.path).delete().catch(() => {})
     }
     log(`photos: ${ok}/${pending.length} ready for review`)
+    await remindReview(env, db)
     return ok
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
+}
+
+// Web-push reminder: anything sitting in the Review inbox waiting on the user.
+// A flyer crop or a shelf photo is worthless until it's approved into a price,
+// and the queue is out of sight on the Review tab — so the morning run says
+// what's waiting. Silent when the inbox is empty (no "0 items" push), and a
+// no-op without registered devices or the admin SDK (sendPush handles both).
+async function remindReview(env, db) {
+  const queue = db.photoQueue ?? []
+  const ready = queue.filter((p) => p.status === 'ready').length
+  const failed = queue.filter((p) => p.status === 'failed').length
+  if (!ready && !failed) {
+    log('review: inbox empty — no reminder sent')
+    return
+  }
+  const parts = []
+  if (ready) parts.push(`${ready} price${ready === 1 ? '' : 's'} to approve`)
+  if (failed) parts.push(`${failed} couldn't be read`)
+  await sendPush(env, { title: '📷 Review waiting', body: parts.join(' · ') })
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
