@@ -51,6 +51,20 @@ export function photoUrl(entry) {
   return getDownloadURL(ref(storage, entry.path))
 }
 
+// Flyer crops (§17) are approved WITH their image: the record keeps the ad
+// picture for Home's visual deal list. Resolves the download URL to store on
+// the record, or null when there's no image (or Storage can't be reached) —
+// a deal without a picture is still a perfectly good deal, so this never
+// blocks an approval.
+export async function keepImage(entry) {
+  if (entry?.source !== 'flyer' || !entry.path) return null
+  try {
+    return await photoUrl(entry)
+  } catch {
+    return null
+  }
+}
+
 // Best-effort delete of an entry's Storage image (pending photo capture, or a
 // flyer review entry with its page image, §12). No-op when the entry has no
 // path or the object is already gone (processed captures keep a dangling path).
@@ -131,8 +145,32 @@ export function applyEntry(d, entry, newId = null) {
             : {}),
           source: 'photo',
         }),
+    // A flyer crop (§17) keeps its ad image on the record: `imgPath` so the
+    // cleanup pass can delete it from Storage once the deal expires, `imgUrl`
+    // (resolved by the caller before applying — getDownloadURL is async and
+    // this runs inside a mutator) so Home's visual deal list can show it
+    // without a lookup per tile.
+    ...(flyer && entry.path && entry.imgUrl ? { imgPath: entry.path, imgUrl: entry.imgUrl } : {}),
     ts: entry.ts,
   })
+  // An illustrated deal supersedes the same deal imported without a picture:
+  // the automatic import (§12) and a hand-drawn crop of the same ad both land
+  // as one flyer record per item+store per week, and the one with the image is
+  // the better card. Only image-less flyer records are dropped, and only for
+  // this item+store within the week — a manual or photo price is never touched.
+  if (flyer && entry.path && entry.imgUrl) {
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000
+    d.records = d.records.filter(
+      (r) =>
+        !(
+          r.source === 'flyer' &&
+          !r.imgPath &&
+          r.itemId === item.id &&
+          r.storeId === entry.storeId &&
+          r.ts > weekAgo
+        ),
+    )
+  }
   d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== entry.id)
   return item.id
 }

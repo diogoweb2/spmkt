@@ -75,6 +75,10 @@ export default function Home({ db, update, push }) {
   const meat = mode === 'meat'
   const showMeat = all || meat
   const showGrocery = all || mode === 'grocery'
+  // Visual is the default deals layout (§17): the flyer crops make a custom
+  // flyer of exactly the deals the filters select, which reads far faster than
+  // a wall of text. 📋 List is the same data in the dense row form.
+  const [tiles, setTiles] = useSessionState('home.tiles', true)
   const [ratingsOn, setRatingsOn] = useSessionState('home.ratingsOn', () => new Set(['excellent', 'good']), { set: true })
   const [storesOff, setStoresOff] = useSessionState('home.storesOff', () => new Set(), { set: true })
   const [typesOff, setTypesOff] = useSessionState('home.typesOff', () => new Set(), { set: true })
@@ -513,6 +517,13 @@ export default function Home({ db, update, push }) {
             >
               ⏰ Expired
             </button>
+            <button
+              className="no-check"
+              onClick={() => setTiles(!tiles)}
+              title={tiles ? 'Switch to the dense list' : 'Switch to the visual flyer'}
+            >
+              {tiles ? '📋 List' : '🖼️ Visual'}
+            </button>
             {hasUpcoming && (
               <button
                 className={onlyUpcoming ? 'on' : ''}
@@ -536,7 +547,30 @@ export default function Home({ db, update, push }) {
             </div>
           )}
 
-          <div className="grid-2">
+          {/* 🖼️ Visual: the filtered deals as a custom flyer — the ad crop kept
+              from each approved deal (§17), or a text-only tile when the deal
+              has no picture. Same data, same order as the list below. */}
+          {tiles && sections.map(({ key, label, list }) => (
+            <div key={key} style={{ marginTop: 10 }}>
+              {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
+              <div className="deal-tiles">
+                {list.map((d) => (
+                  <DealTile
+                    key={d.key}
+                    d={d}
+                    db={db}
+                    delta={lastBuyDelta(db, d)}
+                    pr={priceRank(db, d)}
+                    rvStatus={rvState[d.key] ?? (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)}
+                    onOpen={() => push({ name: 'item', itemId: d.item.id })}
+                    onAdd={() => sendToRv(d)}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {!tiles && <div className="grid-2">
             {sections.map(({ key, label, list }) => (
               <div key={key} style={{ marginTop: 10 }}>
                 {label && <div className="lbl" style={{ marginBottom: 4 }}>{label}</div>}
@@ -644,7 +678,7 @@ export default function Home({ db, update, push }) {
                 </div>
               </div>
             ))}
-          </div>
+          </div>}
         </>
       )}
 
@@ -867,6 +901,72 @@ export default function Home({ db, update, push }) {
 
 // ⋮ overflow menu on a row — makes Merge / Don't import / Compare
 // discoverable without knowing the long-press gesture.
+// 🖼️ One deal as a flyer-style card: the ad crop kept from the approved deal
+// (§17) above the price. A deal with no picture — a manual price, a photo
+// capture, or an older import — renders the same card without the image area,
+// so the grid never has holes in it.
+function DealTile({ d, db, delta, pr, rvStatus, onOpen, onAdd }) {
+  const img = d.rec.imgUrl
+  return (
+    <div className={`deal-tile${d.expired ? ' expired' : ''}`} onClick={onOpen} role="button" tabIndex={0}>
+      {img ? (
+        <div className="deal-tile-img">
+          <img src={img} alt="" loading="lazy" />
+        </div>
+      ) : (
+        <div className="deal-tile-img none" aria-hidden="true">
+          🏷️
+        </div>
+      )}
+
+      <span
+        role="button"
+        aria-label="Add to RV Groceries list"
+        className={`rv-add deal-tile-add${rvStatus ? ' on' : ''}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (!rvStatus) onAdd()
+        }}
+      >
+        {{ pending: '…', ok: '✓', err: '!' }[rvStatus] ?? '+'}
+      </span>
+      {pr && (
+        <span className="price-rank deal-tile-rank" style={{ color: rankColor(pr.rank), borderColor: rankColor(pr.rank) }}>
+          #{pr.rank}{pr.rank === 1 ? '🎉' : ''}
+        </span>
+      )}
+
+      <div className="deal-tile-body">
+        <div className="deal-tile-price">{fmtDisplay(d.norm, d.byPiece ? 'count' : d.item.kind, db.displayWeightUnit)}</div>
+        <div className="title deal-tile-name">{d.item.name}</div>
+        {d.rec.origName && <div className="sub" style={{ fontStyle: 'italic' }}>“{d.rec.origName}”</div>}
+        <div className="sub row-store">
+          {storeLogo(d.store.name) ? (
+            <img className="row-logo" src={storeLogo(d.store.name)} alt={d.store.name} title={d.store.name} />
+          ) : (
+            <span>{d.store.name}</span>
+          )}
+          {d.rec.validUntil && (
+            <span style={{ color: d.expired ? 'var(--muted)' : UNTIL_COLOR[untilUrgency(d.rec.validUntil)] }}>
+              {d.expired ? 'ended' : 'until'} {new Date(d.rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </span>
+          )}
+          {delta != null && (
+            <span className={`delta ${delta < 0 ? 'down' : 'up'}`}>
+              {delta < 0 ? '▼' : '▲'} {Math.abs(delta)}%
+            </span>
+          )}
+        </div>
+        <div className="deal-tile-badges">
+          {d.byPiece && <span className="badge lvl-ok">📦 by piece</span>}
+          {d.rec.minQty >= 2 && <span className="badge lvl-ok">🛒 buy {d.rec.minQty}+</span>}
+          {d.rating && <span className={`badge ${RATING[d.rating].cls}`}>{RATING[d.rating].label}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function RowMenu({ open, onOpen, actions }) {
   return (
     <span className="menu-wrap hover-reveal" onPointerDown={(e) => e.stopPropagation()}>

@@ -49,20 +49,50 @@ The user's existing items: ${JSON.stringify(existingNames)}
 
 Output ONLY a JSON array (no prose, no markdown fence), one element per photo, SAME ORDER as the files.`
 
+// Storage cleanup for the visual deal list (§17): an approved flyer crop keeps
+// its ad image on the record so Home can show it, which means nothing deletes
+// it at approval time. Once the deal is over the picture is dead weight, so
+// every run drops the image of any flyer record whose validity window has
+// passed and clears `imgPath`/`imgUrl` from the record. Records with no
+// validUntil are left alone — there's no date saying the deal is done.
+// Returns the number of images deleted; mutates db (the caller saves).
+async function purgeExpiredImages(db, bucket, dryRun) {
+  const now = Date.now()
+  const stale = (db.records ?? []).filter((r) => r.imgPath && r.validUntil && r.validUntil < now)
+  if (!stale.length) return 0
+  if (dryRun) {
+    log(`photos: dry run — would delete ${stale.length} expired deal image(s)`)
+    return 0
+  }
+  let n = 0
+  for (const r of stale) {
+    await bucket.file(r.imgPath).delete().catch(() => {})
+    delete r.imgPath
+    delete r.imgUrl
+    n++
+  }
+  log(`photos: deleted ${n} expired deal image(s)`)
+  return n
+}
+
 export async function processPhotos(env, { dryRun = false } = {}) {
   const keyPath = join(here, '../flyers/service-account.json')
   if (!existsSync(keyPath)) throw new Error('scripts/flyers/service-account.json required (Storage needs the admin SDK)')
 
   const { db, save } = await openFamilyDoc(env)
   if (!db) throw new Error('family db doc not found')
-  const pending = (db.photoQueue ?? []).filter((p) => p.status === 'pending')
-  if (!pending.length) {
-    log('photos: nothing to process')
-    return 0
-  }
-
   const { getStorage } = await import('firebase-admin/storage')
   const bucket = getStorage().bucket(BUCKET)
+
+  const pending = (db.photoQueue ?? []).filter((p) => p.status === 'pending')
+  if (!pending.length) {
+    // Still worth a run: expired deal images have to be cleaned up whether or
+    // not anything new was photographed.
+    log('photos: nothing to process')
+    const purged = await purgeExpiredImages(db, bucket, dryRun)
+    if (purged) await save(db)
+    return 0
+  }
 
   // Download every pending photo; entries whose photo is gone are failed.
   const tmp = mkdtempSync(join(tmpdir(), 'spmkt-photos-'))
@@ -133,9 +163,11 @@ export async function processPhotos(env, { dryRun = false } = {}) {
 
     if (dryRun) {
       log(`photos: dry run — would mark ${ok} ready (photos kept)`)
+      await purgeExpiredImages(db, bucket, true)
       return ok
     }
 
+    await purgeExpiredImages(db, bucket, false)
     await save(db)
     // Photos are only deleted after the extraction is safely saved.
     // Flyer crops (§17) are the exception: they're small, and the Review card

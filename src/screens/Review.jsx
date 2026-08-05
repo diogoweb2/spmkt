@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fmtQty, unitKind } from '../lib/units'
 import { GROCERY_TYPE_LABEL } from '../lib/meat'
-import { photoUrl, removePhoto, applyEntry, entryItemId, deleteEntryImage } from '../lib/photos'
+import { photoUrl, removePhoto, applyEntry, entryItemId, deleteEntryImage, keepImage } from '../lib/photos'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
 import { mergeSuggestions, mergeItems, suggestName, groupIds, findByName } from '../lib/merge'
@@ -29,17 +29,23 @@ export default function Review({ db, update, push }) {
   // created by earlier entries in the same batch.
   // Approve with no merge picks: just apply. With picks, apply first (so the
   // entry's item exists and carries its price) and then ask for the group name.
-  function approve(entry, picked = []) {
+  // A flyer crop (§17) is approved WITH its picture: the URL is resolved first
+  // (async, so it can't happen inside applyEntry's mutator) and the image is
+  // left in Storage for the record to show. Everything else — shelf photos —
+  // still has its image deleted on approval.
+  async function approve(entry, picked = []) {
+    const imgUrl = await keepImage(entry)
+    const withImg = imgUrl ? { ...entry, imgUrl } : entry
     if (!picked.length) {
-      update((d) => applyEntry(d, entry))
-      deleteEntryImage(entry) // flyer review entries carry a page image to clean up
+      update((d) => applyEntry(d, withImg))
+      if (!imgUrl) deleteEntryImage(entry)
       toast(`Saved ${entry.itemName} — $${entry.price}`)
       return
     }
     // Resolve the id before update() — its mutator is deferred by React.
     const itemId = entryItemId(db, entry)
-    update((d) => applyEntry(d, entry, itemId))
-    deleteEntryImage(entry)
+    update((d) => applyEntry(d, withImg, itemId))
+    if (!imgUrl) deleteEntryImage(entry)
     const items = [
       db.items.find((i) => i.id === itemId) ?? { id: itemId, name: entry.itemName },
       ...picked.map((id) => db.items.find((i) => i.id === id)),
@@ -61,10 +67,15 @@ export default function Review({ db, update, push }) {
     toast(`Merged into “${name}”`)
   }
 
-  function approveAll() {
+  async function approveAll() {
     const batch = ready
-    update((d) => batch.forEach((entry) => applyEntry(d, entry)))
-    batch.forEach(deleteEntryImage)
+    // Resolve every flyer crop's image URL in parallel first, then apply the
+    // whole batch in one update so entries still see items created by earlier
+    // ones. Shelf photos resolve to null and have their image deleted.
+    const urls = await Promise.all(batch.map(keepImage))
+    const entries = batch.map((entry, i) => (urls[i] ? { ...entry, imgUrl: urls[i] } : entry))
+    update((d) => entries.forEach((entry) => applyEntry(d, entry)))
+    batch.forEach((entry, i) => !urls[i] && deleteEntryImage(entry))
     toast(`Saved ${batch.length} prices ✓`)
   }
 
