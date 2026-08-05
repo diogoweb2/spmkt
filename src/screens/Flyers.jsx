@@ -23,9 +23,11 @@ const MIN_BOX = 0.02
 const DONE_AT = 0.7
 
 // How long a page has to hold the middle of the viewport before it counts as
-// reviewed. Long enough that scrolling through to reach page 20 doesn't claim
-// pages 1-19 were read, short enough that actually looking at one marks it.
-const DWELL_MS = 1200
+// reviewed while you're still on it. Pages are ALSO marked once scrolled past
+// (see CropPage), which is what actually covers a fast pass — dwell alone
+// marked barely half the pages of a flyer that had been gone through, because
+// a page with nothing worth cropping gets scanned in well under a second.
+const DWELL_MS = 800
 
 // db.flyerReview is keyed by STORE NAME, with the flyer's validity window
 // stored inside the record — so a store chip can show its ✓ without that
@@ -119,6 +121,21 @@ export default function Flyers({ db, update }) {
     [flyer, store.name, update],
   )
 
+  // "I'm done with this flyer" — for the tail of ad/pharmacy pages that aren't
+  // worth scrolling through one by one. Also the way to clear it and start over.
+  const markAll = (done) => {
+    if (!flyer) return
+    update((d) => {
+      d.flyerReview ??= {}
+      d.flyerReview[store.name] = {
+        pages: done ? flyer.pages.map((_, i) => i + 1) : [],
+        total: flyer.pages.length,
+        validUntil: flyer.validUntil ?? null,
+        ts: Date.now(),
+      }
+    })
+  }
+
   const toggleReviewed = (pageNo) => {
     if (!flyer) return
     if (!reviewed.has(pageNo)) return markReviewed(pageNo)
@@ -201,6 +218,13 @@ export default function Flyers({ db, update }) {
             {progress.done ? '✅ Reviewed' : 'Reviewed'} {progress.seen}/{flyer.pages.length} pages
             {progress.done ? '' : ` · ${Math.round(progress.pct * 100)}%`}
           </span>
+          <button
+            className="flyer-markall"
+            title={progress.seen === flyer.pages.length ? 'Clear this flyer’s progress' : 'Mark every page of this flyer reviewed'}
+            onClick={() => markAll(progress.seen !== flyer.pages.length)}
+          >
+            {progress.seen === flyer.pages.length ? 'Clear' : 'Mark all'}
+          </button>
         </div>
       )}
 
@@ -362,12 +386,20 @@ function CropPage({ url, page, boxes, seen, onBox, onVisible, onDwell, onToggleR
     let timer = null
     const io = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) {
+        const e = entries[0]
+        if (!e) return
+        if (e.isIntersecting) {
           onVisible(page)
           timer = setTimeout(() => onDwell(page), DWELL_MS)
-        } else {
-          clearTimeout(timer)
+          return
         }
+        clearTimeout(timer)
+        // Scrolled clean past (the whole page is now above the viewport):
+        // it was on screen on the way through, so it counts as reviewed even
+        // if it never held still long enough for the dwell timer. This is the
+        // rule that matters on a fast pass — dwell only catches the page you
+        // stop on.
+        if (e.boundingClientRect.bottom <= 0) onDwell(page)
       },
       { rootMargin: '-45% 0px -45% 0px' },
     )
