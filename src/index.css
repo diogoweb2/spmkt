@@ -791,3 +791,20 @@ html[data-theme='dark'] .skeleton::after {
 .flyer-box.drawing { border-style: dashed; background: rgba(22, 163, 74, 0.1); }
 .flyer-box.saving { border-color: var(--md-outline); background: rgba(120, 120, 120, 0.2); }
 .flyer-box.failed { border-color: var(--md-error); background: rgba(220, 38, 38, 0.18); }
+
+/* Flyers: continuous page feed (§17) — the toolbar stays reachable through a
+   40-page scroll, and each page is labelled since there's no page control. */
+.flyer-bar {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--md-surface);
+  padding-top: 4px;
+}
+.flyer-page + .flyer-page { margin-top: 10px; }
+.flyer-page-no {
+  position: absolute; left: 6px; top: 6px;
+  background: rgba(0, 0, 0, 0.55); color: #fff;
+  font-size: 11px; font-weight: 700;
+  padding: 1px 7px; border-radius: 999px;
+  pointer-events: none;
+}
+.flyer-more { text-align: center; padding: 14px 0 4px; }

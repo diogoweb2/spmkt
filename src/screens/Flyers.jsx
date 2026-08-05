@@ -126,15 +126,13 @@ export default function Flyers({ db, update }) {
 
       {flyer && page != null && (
         <PageCropper
-          url={flyer.pages[page - 1]}
-          page={page}
-          pageCount={flyer.pages.length}
+          pages={flyer.pages}
+          from={page}
           zoom={zoom}
           setZoom={setZoom}
-          boxes={queued.filter((b) => b.page === page)}
-          onBox={(box) => queueBox(page, box)}
+          queued={queued}
+          onBox={queueBox}
           onBack={() => setPage(null)}
-          onPage={(n) => setPage(n)}
         />
       )}
     </div>
@@ -161,13 +159,107 @@ function PageGrid({ pages, queued, onPick }) {
   )
 }
 
-// One page, drag to draw a box around a deal. Pointer events (mouse + touch),
-// with touch-action none on the image so a drag draws instead of scrolling the
-// page. Coordinates are normalized against the rendered image box, so they stay
-// correct at any zoom and the crop is taken from the full-resolution image.
-function PageCropper({ url, page, pageCount, zoom, setZoom, boxes, onBox, onBack, onPage }) {
+// Continuous page feed starting at the page the user picked: reaching the
+// bottom appends the next page (IntersectionObserver on a sentinel), so a
+// 40-page flyer is one long scroll instead of 40 taps on ‹ ›. Pages are only
+// ever appended — going back up is just scrolling, and a box already drawn
+// stays where it was drawn.
+function PageCropper({ pages, from, zoom, setZoom, queued, onBox, onBack }) {
+  // How many pages after `from` are mounted. The sentinel bumps it as the user
+  // reaches the bottom; capped at the last page of the flyer.
+  const [count, setCount] = useState(1)
+  const [current, setCurrent] = useState(from) // page filling the viewport, for the header
+  const sentinelRef = useRef(null)
+  const last = Math.min(from + count - 1, pages.length)
+
+  // Restart the feed whenever the user picks a different page from the grid.
+  useEffect(() => {
+    setCount(1)
+    setCurrent(from)
+  }, [from])
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || last >= pages.length) return
+    // rootMargin: start loading a screenful early so the next page is decoded
+    // by the time the current one scrolls off — no visible gap at the seam.
+    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && setCount((c) => c + 1), {
+      rootMargin: '600px 0px',
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [last, pages.length])
+
+  return (
+    <div>
+      <div className="chips flyer-bar">
+        <button className="chip" onClick={onBack}>
+          ← All pages
+        </button>
+        <span className="muted small" style={{ alignSelf: 'center' }}>
+          Page {current} / {pages.length}
+        </span>
+        {/* no-check: these are a zoom level, not a filter — the ✓ prefix reads wrong */}
+        {[1, 2, 3].map((z) => (
+          <button key={z} className={`no-check${zoom === z ? ' on' : ''}`} onClick={() => setZoom(z)}>
+            {z}×
+          </button>
+        ))}
+      </div>
+
+      <p className="muted small">Drag a box around a deal — the crop goes to Review.</p>
+
+      <div className="flyer-page-scroll">
+        <div style={{ width: `${zoom * 100}%` }}>
+          {Array.from({ length: last - from + 1 }, (_, i) => {
+            const n = from + i
+            return (
+              <CropPage
+                key={pages[n - 1]}
+                url={pages[n - 1]}
+                page={n}
+                boxes={queued.filter((b) => b.page === n)}
+                onBox={(box) => onBox(n, box)}
+                // setCurrent, not a closure: an inline arrow would be a new
+                // function every render and re-run the observer effect each time
+                onVisible={setCurrent}
+              />
+            )
+          })}
+        </div>
+      </div>
+
+      {last < pages.length ? (
+        <div ref={sentinelRef} className="muted small flyer-more">
+          Loading page {last + 1}…
+        </div>
+      ) : (
+        <p className="muted small flyer-more">End of the flyer.</p>
+      )}
+    </div>
+  )
+}
+
+// One page of the feed: drag to draw a box around a deal. Pointer events
+// (mouse + touch), with touch-action none on the image so a drag draws instead
+// of scrolling. Coordinates are normalized against the rendered image box, so
+// they stay correct at any zoom and the crop is taken from the full-resolution
+// image.
+function CropPage({ url, page, boxes, onBox, onVisible }) {
   const wrapRef = useRef(null)
   const [drag, setDrag] = useState(null) // {x0, y0, x, y} normalized
+
+  // Report this page as "current" while it owns the middle of the viewport, so
+  // the header page number follows the scroll.
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const io = new IntersectionObserver((entries) => entries[0]?.isIntersecting && onVisible(page), {
+      rootMargin: '-45% 0px -45% 0px',
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [onVisible, page])
 
   const norm = (e) => {
     const r = wrapRef.current.getBoundingClientRect()
@@ -207,49 +299,23 @@ function PageCropper({ url, page, pageCount, zoom, setZoom, boxes, onBox, onBack
   }
 
   return (
-    <div>
-      <div className="chips">
-        <button className="chip" onClick={onBack}>
-          ← All pages
-        </button>
-        <button className="chip" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          ‹
-        </button>
-        <span className="muted small" style={{ alignSelf: 'center' }}>
-          Page {page} / {pageCount}
-        </span>
-        <button className="chip" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
-          ›
-        </button>
-        {/* no-check: these are a zoom level, not a filter — the ✓ prefix reads wrong */}
-        {[1, 2, 3].map((z) => (
-          <button key={z} className={`no-check${zoom === z ? ' on' : ''}`} onClick={() => setZoom(z)}>
-            {z}×
-          </button>
-        ))}
-      </div>
-
-      <p className="muted small">Drag a box around a deal — the crop goes to Review.</p>
-
-      <div className="flyer-page-scroll">
-        <div ref={wrapRef} className="flyer-page" style={{ width: `${zoom * 100}%` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-          <img src={url} alt={`Page ${page}`} draggable={false} />
-          {boxes.map((b) => (
-            <span
-              key={b.id}
-              className={`flyer-box ${b.status}`}
-              title={b.error || (b.status === 'done' ? 'Queued for Review' : b.status)}
-              style={{ left: `${b.box.x * 100}%`, top: `${b.box.y * 100}%`, width: `${b.box.w * 100}%`, height: `${b.box.h * 100}%` }}
-            />
-          ))}
-          {live && (
-            <span
-              className="flyer-box drawing"
-              style={{ left: `${live.x * 100}%`, top: `${live.y * 100}%`, width: `${live.w * 100}%`, height: `${live.h * 100}%` }}
-            />
-          )}
-        </div>
-      </div>
+    <div ref={wrapRef} className="flyer-page" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <img src={url} alt={`Page ${page}`} draggable={false} />
+      <span className="flyer-page-no">{page}</span>
+      {boxes.map((b) => (
+        <span
+          key={b.id}
+          className={`flyer-box ${b.status}`}
+          title={b.error || (b.status === 'done' ? 'Queued for Review' : b.status)}
+          style={{ left: `${b.box.x * 100}%`, top: `${b.box.y * 100}%`, width: `${b.box.w * 100}%`, height: `${b.box.h * 100}%` }}
+        />
+      ))}
+      {live && (
+        <span
+          className="flyer-box drawing"
+          style={{ left: `${live.x * 100}%`, top: `${live.y * 100}%`, width: `${live.w * 100}%`, height: `${live.h * 100}%` }}
+        />
+      )}
     </div>
   )
 }
