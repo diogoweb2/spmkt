@@ -12,6 +12,10 @@ import { itemRecords, recordNorm, isComparable, variantKey, variantLabel } from 
 // the last few days); every other still-valid flyer price is treated as current.
 const RECENT_MS = 3 * 24 * 3600 * 1000
 
+// A record from the fresh upcoming (next-week) batch — see the note above.
+// Shared with Home's 🔜 Upcoming filter (§12).
+export const isUpcomingRec = (r, now = Date.now()) => !!r.upcoming && r.ts >= now - RECENT_MS
+
 // Entries where today's best price beats next week's, biggest saving first.
 // Each: { item, variant, variantLabel, current, upcoming, pct } where current
 // and upcoming are { rec, store, norm } for the same product variant.
@@ -36,7 +40,7 @@ export function buyTodayDeals(db, now = Date.now()) {
       byVariant.get(k).push(r)
     }
 
-    const isUpcoming = (r) => !!r.upcoming && r.ts >= now - RECENT_MS
+    const isUpcoming = (r) => isUpcomingRec(r, now)
     const bestOf = (list) =>
       list
         .map((rec) => ({ rec, store: db.stores.find((s) => s.id === rec.storeId), norm: recordNorm(rec, item, db) }))

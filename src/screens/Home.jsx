@@ -4,7 +4,7 @@ import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GR
 import { ignoreItems } from '../lib/ignore'
 import { canMerge, mergeItems, suggestName, targetUnit, groupIds, searchIndex } from '../lib/merge'
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo, isComparable } from '../lib/analysis'
-import { buyTodayDeals } from '../lib/buytoday'
+import { buyTodayDeals, isUpcomingRec } from '../lib/buytoday'
 import { effectivePrice } from '../lib/cashback'
 import { addToRvList } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
@@ -69,6 +69,7 @@ function rankColor(rank) {
 export default function Home({ db, update, push }) {
   const [view, setView] = useSessionState('home.view', 'deals') // 'deals' | 'items'
   const [showExpired, setShowExpired] = useSessionState('home.showExpired', false)
+  const [onlyUpcoming, setOnlyUpcoming] = useSessionState('home.onlyUpcoming', false)
   const [mode, setMode] = useSessionState('home.mode', 'all') // 'all' | 'meat' | 'grocery'
   const all = mode === 'all'
   const meat = mode === 'meat'
@@ -100,8 +101,18 @@ export default function Home({ db, update, push }) {
   // products whose live deal beats next week's flyer, so waiting costs more.
   const buyToday = useMemo(() => (new Date().getDay() === 3 ? buyTodayDeals(db) : []), [db])
 
-  const groups = useMemo(() => meatDeals(db, { includeExpired: showExpired }), [db, showExpired])
-  const grocery = useMemo(() => groceryDeals(db, { includeExpired: showExpired }), [db, showExpired])
+  // 🔜 Upcoming filter: only offered when this week's next-week-flyer batch
+  // actually brought in deals (§12), otherwise the chip stays hidden.
+  const hasUpcoming = useMemo(() => db.records.some((r) => isUpcomingRec(r)), [db.records])
+  const upcomingOn = onlyUpcoming && hasUpcoming
+  const groups = useMemo(
+    () => meatDeals(db, { includeExpired: showExpired, onlyUpcoming: upcomingOn }),
+    [db, showExpired, upcomingOn],
+  )
+  const grocery = useMemo(
+    () => groceryDeals(db, { includeExpired: showExpired, onlyUpcoming: upcomingOn }),
+    [db, showExpired, upcomingOn],
+  )
   const meatFlat = MEAT_TYPES.flatMap((t) => groups[t] ?? [])
   const allDeals = all ? [...meatFlat, ...grocery] : meat ? meatFlat : grocery
   const currentStore = db.stores.find((s) => s.id === db.currentStoreId)
@@ -502,6 +513,15 @@ export default function Home({ db, update, push }) {
             >
               ⏰ Expired
             </button>
+            {hasUpcoming && (
+              <button
+                className={onlyUpcoming ? 'on' : ''}
+                onClick={() => setOnlyUpcoming(!onlyUpcoming)}
+                title="Show only next week's upcoming flyer deals"
+              >
+                🔜 Upcoming
+              </button>
+            )}
           </Chips>
 
           {sections.length === 0 && (
