@@ -6,21 +6,30 @@
   <string>com.spmkt.flyers</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/diogolopes/.local/share/fnm/node-versions/v24.12.0/installation/bin/node</string>
-    <string>/Users/diogolopes/dev/Spmkt/scripts/flyers/run.mjs</string>
-    <string>--upcoming</string>
+    <string>/bin/zsh</string>
+    <string>/Users/diogolopes/dev/Spmkt/scripts/flyers/run-guarded.sh</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/diogolopes/dev/Spmkt</string>
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Weekday</key>
-    <integer>3</integer>
-    <key>Hour</key>
-    <integer>10</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
+  <array>
+    <dict>
+      <key>Weekday</key>
+      <integer>3</integer>
+      <key>Hour</key>
+      <integer>7</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key>
+      <integer>3</integer>
+      <key>Hour</key>
+      <integer>10</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+  </array>
   <key>StandardOutPath</key>
   <string>/Users/diogolopes/Library/Logs/spmkt-flyers.log</string>
   <key>StandardErrorPath</key>
