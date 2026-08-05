@@ -14,6 +14,7 @@
 // Storage); there is no password fallback because Storage needs admin.
 
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -34,7 +35,15 @@ const BUCKET = 'spmkt-cc6fd.firebasestorage.app'
 const MODEL = 'claude-sonnet-5'
 const EFFORT = 'low'
 
+// Extractions become price records immediately instead of queueing as Review
+// cards. The Review step existed because the cheaper model was unreliable;
+// with Sonnet reading one hand-cropped deal at a time it costs more attention
+// than it saves. `--review` restores the old approve-every-card behaviour.
+const AUTO_APPROVE = !process.argv.includes('--review')
+
 const UNITS = ['kg', 'g', 'lb', 'oz', 'L', 'ml', 'un']
+const KINDS = { weight: ['kg', 'g', 'lb', 'oz'], volume: ['L', 'ml'], count: ['un'] }
+const kindOf = (unit) => Object.keys(KINDS).find((k) => KINDS[k].includes(unit))
 const GROCERY_TYPES = ['produce', 'dairy', 'bakery', 'frozen', 'pantry', 'snacks', 'beverages', 'household', 'other']
 
 const PROMPT = (files, existingNames) => `Use the Read tool to open ${files.length === 1 ? 'this image file' : `these ${files.length} image files, one by one`} — each shows ONE supermarket deal: either a photo of a shelf price label taken by a shopper, or a crop the shopper drew around a single ad block in a store flyer (§17). Both carry the same fields; a flyer crop is just printed rather than photographed, and its price is already the sale price. You CAN view images via the Read tool:
@@ -59,6 +68,83 @@ For EACH photo, extract the price entry:
 The user's existing items: ${JSON.stringify(existingNames)}
 
 Output ONLY a JSON array (no prose, no markdown fence), one element per photo, SAME ORDER as the files.`
+
+// A permanent, app-readable URL for a kept crop. The client normally gets this
+// from getDownloadURL(); server-side the equivalent is to stamp the object with
+// a download token and build the same URL by hand. (A V4 signed URL would
+// expire in a week and take the picture off the deal card with it.)
+async function publicImageUrl(bucket, path) {
+  const token = randomUUID()
+  await bucket.file(path).setMetadata({ metadata: { firebaseStorageDownloadTokens: token } })
+  return `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`
+}
+
+// Auto-approve: turn an extracted entry straight into a price record, the same
+// way the app's ✓ Approve does (src/lib/photos.js applyEntry) — item matched by
+// id or exact name else created, flyer provenance and the kept crop carried
+// onto the record, image-less flyer duplicates for that item+store this week
+// dropped in favour of the illustrated one (§17). Mutates db; the caller saves.
+function approveEntry(db, entry, imgUrl) {
+  const meat = entry.category === 'meat'
+  db.items ??= []
+  db.records ??= []
+  let item =
+    db.items.find((i) => i.id === entry.matchedItemId) ??
+    db.items.find((i) => i.name.trim().toLowerCase() === entry.itemName.trim().toLowerCase())
+  if (!item) {
+    // meatType/market stay null: the classify pass (§13) fills them in, the
+    // same as for an item created by the import.
+    item = {
+      id: `i-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      name: entry.itemName.trim(),
+      category: meat ? 'meat' : 'other',
+      kind: kindOf(entry.unit),
+      defaultUnit: entry.unit,
+      annualQty: null,
+      meatType: null,
+      processing: meat ? (entry.processing ?? 'natural') : null,
+      market: null,
+      ...(meat ? {} : { groceryType: entry.groceryType ?? 'other' }),
+    }
+    db.items.push(item)
+  }
+  const flyer = entry.source === 'flyer'
+  db.records.push({
+    id: `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+    itemId: item.id,
+    storeId: entry.storeId,
+    price: entry.price,
+    qty: entry.qty,
+    unit: entry.unit,
+    frozen: meat ? !!entry.frozen : null,
+    bones: meat ? !!entry.bones : null,
+    skin: meat ? !!entry.skin : null,
+    ...(Number.isInteger(entry.minQty) && entry.minQty >= 2 ? { minQty: entry.minQty } : {}),
+    ...(flyer
+      ? {
+          ...(entry.itemName.trim().toLowerCase() !== item.name.trim().toLowerCase() ? { origName: entry.itemName.trim() } : {}),
+          source: 'flyer',
+          validUntil: entry.validUntil ?? null,
+          flyerUrl: entry.flyerUrl ?? null,
+          flyerPage: entry.flyerPage ?? null,
+          ...(entry.upcoming ? { upcoming: true } : {}),
+        }
+      : {
+          ...(entry.itemName.trim().toLowerCase() !== item.name.trim().toLowerCase() ? { origName: entry.itemName.trim() } : {}),
+          source: 'photo',
+        }),
+    ...(flyer && imgUrl ? { imgPath: entry.path, imgUrl } : {}),
+    ts: entry.ts,
+  })
+  if (flyer && imgUrl) {
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000
+    db.records = db.records.filter(
+      (r) => !(r.source === 'flyer' && !r.imgPath && r.itemId === item.id && r.storeId === entry.storeId && r.ts > weekAgo),
+    )
+  }
+  db.photoQueue = (db.photoQueue ?? []).filter((p) => p.id !== entry.id)
+  return item.name
+}
 
 // Storage cleanup for the visual deal list (§17): an approved flyer crop keeps
 // its ad image on the record so Home can show it, which means nothing deletes
@@ -123,6 +209,7 @@ export async function processPhotos(env, { dryRun = false } = {}) {
   }
 
   let ok = 0
+  let approved = 0
   try {
     if (files.length) {
       const claude = findClaude()
@@ -171,6 +258,30 @@ export async function processPhotos(env, { dryRun = false } = {}) {
         if (r.note) entry.note = String(r.note)
         ok++
         log(`  ${entry.id}: ${entry.itemName} — $${entry.price} / ${entry.qty} ${entry.unit}${match ? ` (matches "${match.name}")` : ''}`)
+
+        // Auto-approve (default): a hand-cropped single deal read by Sonnet is
+        // reliable enough that reviewing 70+ cards one by one costs more than
+        // it catches. Two cases still stop for the user, because no model can
+        // resolve them from the picture: a `un` extraction (no size printed
+        // anywhere, so the price isn't comparable — §12) and a NEW product
+        // priced by weight-less count. Failed extractions stay queued as well.
+        if (!AUTO_APPROVE) continue
+        if (entry.unit === 'un') {
+          log('    → left in Review (no size found — needs a weight)')
+          continue
+        }
+        let imgUrl = null
+        if (entry.source === 'flyer' && entry.path && !dryRun) {
+          imgUrl = await publicImageUrl(bucket, entry.path).catch((err) => {
+            log(`    image URL failed (${err.message})`)
+            return null
+          })
+        }
+        if (!dryRun) {
+          const into = approveEntry(db, entry, imgUrl)
+          approved++
+          log(`    → saved as “${into}”`)
+        }
       }
     }
 
@@ -191,8 +302,8 @@ export async function processPhotos(env, { dryRun = false } = {}) {
       if (entry.status === 'pending' || entry.source === 'flyer') continue
       await bucket.file(entry.path).delete().catch(() => {})
     }
-    log(`photos: ${ok}/${pending.length} ready for review`)
-    await remindReview(env, db)
+    log(`photos: ${ok}/${pending.length} extracted, ${approved} saved as prices`)
+    await remindReview(env, db, approved)
     return ok
   } finally {
     rmSync(tmp, { recursive: true, force: true })
@@ -204,18 +315,22 @@ export async function processPhotos(env, { dryRun = false } = {}) {
 // and the queue is out of sight on the Review tab — so the morning run says
 // what's waiting. Silent when the inbox is empty (no "0 items" push), and a
 // no-op without registered devices or the admin SDK (sendPush handles both).
-async function remindReview(env, db) {
+async function remindReview(env, db, approved = 0) {
   const queue = db.photoQueue ?? []
   const ready = queue.filter((p) => p.status === 'ready').length
   const failed = queue.filter((p) => p.status === 'failed').length
-  if (!ready && !failed) {
-    log('review: inbox empty — no reminder sent')
+  if (!ready && !failed && !approved) {
+    log('review: nothing saved, inbox empty — no push sent')
     return
   }
   const parts = []
-  if (ready) parts.push(`${ready} price${ready === 1 ? '' : 's'} to approve`)
+  if (approved) parts.push(`${approved} new price${approved === 1 ? '' : 's'} added`)
+  if (ready) parts.push(`${ready} need${ready === 1 ? 's' : ''} a size`)
   if (failed) parts.push(`${failed} couldn't be read`)
-  await sendPush(env, { title: '📷 Review waiting', body: parts.join(' · ') })
+  await sendPush(env, {
+    title: approved ? '🏷️ New deals in Smart Price' : '📷 Review waiting',
+    body: parts.join(' · '),
+  })
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
