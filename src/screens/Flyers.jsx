@@ -54,8 +54,11 @@ export default function Flyers({ db, update }) {
   const [error, setError] = useState(null)
   const [page, setPage] = useState(null) // 1-based page being cropped, null = page grid
   const [zoom, setZoom] = useState(1)
-  // id -> {page, box, status} for boxes drawn this session, so the user can see
-  // what they already queued on a page (the queue entry itself has no page).
+  // Boxes drawn on the flyer CURRENTLY on screen: {id, page, box, status}, so
+  // the user can see what they already queued (the queue entry itself has no
+  // page). Page-numbered, therefore only meaningful for one flyer — cleared
+  // whenever the flyer changes, or page 1 of Superstore's boxes would be drawn
+  // over page 1 of Metro's, in positions that match nothing on the ad.
   const [queued, setQueued] = useState([])
 
   useEffect(() => {
@@ -64,6 +67,7 @@ export default function Flyers({ db, update }) {
     setError(null)
     setFlyer(null)
     setPage(null)
+    setQueued([])
     loadFlyer(store, { upcoming })
       .then((f) => !cancelled && setFlyer(f))
       .catch((err) => !cancelled && setError(err.message))
