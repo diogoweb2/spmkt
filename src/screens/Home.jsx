@@ -66,6 +66,13 @@ function rankColor(rank) {
   return 'var(--red)'
 }
 
+// 🔥 Great deal: cheapest price ever recorded AND enough history behind it for
+// that to mean something (#1 of at least `minHist` prices). Gets a hot border
+// so it is impossible to miss in the flyer grid / list.
+function isGreat(pr, minHist) {
+  return !!pr && pr.rank === 1 && pr.total >= minHist
+}
+
 export default function Home({ db, update, push }) {
   const [view, setView] = useSessionState('home.view', 'deals') // 'deals' | 'items'
   const [showExpired, setShowExpired] = useSessionState('home.showExpired', false)
@@ -86,6 +93,8 @@ export default function Home({ db, update, push }) {
   const [proc, setProc] = useSessionState('home.proc', 'all')
   const [sort, setSort] = useSessionState('home.sort', 'deal')
   const [bestEver, setBestEver] = useSessionState('home.bestEver', false)
+  // How many historical prices a #1 needs before it counts as a 🔥 great deal.
+  const [greatMin, setGreatMin] = useSessionState('home.greatMin', 5)
   const [q, setQ] = useSessionState('home.q', '')
 
   // ONE selection mode. Keys: item id in Deals view, `${itemId}|${variant}`
@@ -469,6 +478,30 @@ export default function Home({ db, update, push }) {
             </button>
           </Chips>
 
+          {/* 🔥 Great-deal threshold: a #1 backed by at least N historical
+              prices gets the hot border. 1–20, default 5. */}
+          <Chips style={{ marginBottom: 8 }}>
+            <button
+              className="no-check"
+              aria-label="Fewer prices needed for a great deal"
+              disabled={greatMin <= 1}
+              onClick={() => setGreatMin(Math.max(1, greatMin - 1))}
+            >
+              −
+            </button>
+            <button className="no-check on" title="A #1 price with at least this many prices in its history is highlighted as a great deal">
+              🔥 Great deal: #1 of {greatMin}+
+            </button>
+            <button
+              className="no-check"
+              aria-label="More prices needed for a great deal"
+              disabled={greatMin >= 20}
+              onClick={() => setGreatMin(Math.min(20, greatMin + 1))}
+            >
+              +
+            </button>
+          </Chips>
+
           {showMeat && MEAT_TYPES.some((t) => groups[t]?.length) && (
             <Chips style={{ marginBottom: 8 }}>
               <button className="no-check" aria-label="Clear meat type selection" onClick={() => setTypesOff(new Set(MEAT_TYPES))}>✕</button>
@@ -561,6 +594,7 @@ export default function Home({ db, update, push }) {
                     db={db}
                     delta={lastBuyDelta(db, d)}
                     pr={priceRank(db, d)}
+                    greatMin={greatMin}
                     rvStatus={rvState[d.key] ?? (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)}
                     menuOpen={menuFor === d.key}
                     onMenu={() => setMenuFor(menuFor === d.key ? null : d.key)}
@@ -594,7 +628,7 @@ export default function Home({ db, update, push }) {
                     return (
                       <button
                         key={d.key}
-                        className={`row${isSel ? ' sel' : ''}`}
+                        className={`row${isSel ? ' sel' : ''}${isGreat(pr, greatMin) ? ' great' : ''}`}
                         onPointerDown={() => holdStart(d)}
                         onPointerUp={holdEnd}
                         onPointerLeave={holdEnd}
@@ -917,11 +951,13 @@ export default function Home({ db, update, push }) {
 // (§17) above the price. A deal with no picture — a manual price, a photo
 // capture, or an older import — renders the same card without the image area,
 // so the grid never has holes in it.
-function DealTile({ d, db, delta, pr, rvStatus, menuOpen, onMenu, onOpen, onAdd, onMerge, onEdit }) {
+function DealTile({ d, db, delta, pr, greatMin, rvStatus, menuOpen, onMenu, onOpen, onAdd, onMerge, onEdit }) {
   const img = d.rec.imgUrl
+  const great = isGreat(pr, greatMin)
   return (
     <div
-      className={`deal-tile${d.expired ? ' expired' : ''}${menuOpen ? ' menu-open' : ''}`}
+      className={`deal-tile${great ? ' great' : ''}${d.expired ? ' expired' : ''}${menuOpen ? ' menu-open' : ''}`}
+      title={great ? `Great deal — cheapest of ${pr.total} prices in history` : undefined}
       onClick={onOpen}
       role="button"
       tabIndex={0}
@@ -962,7 +998,11 @@ function DealTile({ d, db, delta, pr, rvStatus, menuOpen, onMenu, onOpen, onAdd,
       {pr && (
         <span
           className="price-rank deal-tile-rank"
-          style={{ color: rankColor(pr.rank), borderColor: rankColor(pr.rank) }}
+          style={
+            great
+              ? { color: 'var(--md-on-primary)', borderColor: 'var(--accent)', background: 'var(--accent)' }
+              : { color: rankColor(pr.rank), borderColor: rankColor(pr.rank) }
+          }
           title={`#${pr.rank} cheapest of ${pr.total} prices in history`}
         >
           #{pr.rank}{pr.rank === 1 ? '🎉' : ''}<span className="rank-total">/{pr.total}</span>
