@@ -562,8 +562,20 @@ export default function Home({ db, update, push }) {
                     delta={lastBuyDelta(db, d)}
                     pr={priceRank(db, d)}
                     rvStatus={rvState[d.key] ?? (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)}
+                    menuOpen={menuFor === d.key}
+                    onMenu={() => setMenuFor(menuFor === d.key ? null : d.key)}
                     onOpen={() => push({ name: 'item', itemId: d.item.id })}
-                    onAdd={() => sendToRv(d)}
+                    onAdd={() => { setMenuFor(null); sendToRv(d) }}
+                    onMerge={() => {
+                      // Merge needs a second product to pick, and the tiles have
+                      // no checkboxes — drop to the list so selection is usable.
+                      setTiles(false)
+                      startSelect(d)
+                    }}
+                    onEdit={() => {
+                      setMenuFor(null)
+                      push({ name: 'addPrice', storeId: d.rec.storeId, presetItemId: d.item.id, editRecordId: d.rec.id })
+                    }}
                   />
                 ))}
               </div>
@@ -905,10 +917,15 @@ export default function Home({ db, update, push }) {
 // (§17) above the price. A deal with no picture — a manual price, a photo
 // capture, or an older import — renders the same card without the image area,
 // so the grid never has holes in it.
-function DealTile({ d, db, delta, pr, rvStatus, onOpen, onAdd }) {
+function DealTile({ d, db, delta, pr, rvStatus, menuOpen, onMenu, onOpen, onAdd, onMerge, onEdit }) {
   const img = d.rec.imgUrl
   return (
-    <div className={`deal-tile${d.expired ? ' expired' : ''}`} onClick={onOpen} role="button" tabIndex={0}>
+    <div
+      className={`deal-tile${d.expired ? ' expired' : ''}${menuOpen ? ' menu-open' : ''}`}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+    >
       {img ? (
         <div className="deal-tile-img">
           <img src={img} alt="" loading="lazy" />
@@ -920,16 +937,27 @@ function DealTile({ d, db, delta, pr, rvStatus, onOpen, onAdd }) {
         </div>
       )}
 
-      <span
-        role="button"
-        aria-label="Add to RV Groceries list"
-        className={`rv-add deal-tile-add${rvStatus ? ' on' : ''}`}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!rvStatus) onAdd()
-        }}
-      >
-        {{ pending: '…', ok: '✓', err: '!' }[rvStatus] ?? '+'}
+      {/* ⋮ overflow menu: the tile's actions (add to list, merge, edit) behind
+          one icon, so the card keeps a single top-right control. The RV send
+          state still shows on the icon itself (… / ✓ / !). */}
+      <span className="menu-wrap deal-tile-menu-wrap" onClick={(e) => e.stopPropagation()}>
+        <span
+          role="button"
+          aria-label="Deal actions"
+          className={`rv-add deal-tile-add${rvStatus ? ' on' : ''}`}
+          onClick={(e) => { e.stopPropagation(); onMenu() }}
+        >
+          {{ pending: '…', ok: '✓', err: '!' }[rvStatus] ?? '⋮'}
+        </span>
+        {menuOpen && (
+          <span className="menu deal-tile-menu">
+            <button onClick={() => { if (!rvStatus) onAdd() }} disabled={!!rvStatus}>
+              <span>➕</span> {rvStatus === 'ok' ? 'On the list' : 'Add to list'}
+            </button>
+            <button onClick={onMerge}><span>🔗</span> Merge with…</button>
+            <button onClick={onEdit}><span>✏️</span> Edit</button>
+          </span>
+        )}
       </span>
       {pr && (
         <span

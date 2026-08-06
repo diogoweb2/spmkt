@@ -863,11 +863,14 @@ html[data-theme='dark'] .skeleton::after {
   position: relative;
   background: var(--md-surface-container);
   border-radius: var(--radius-l);
-  overflow: hidden;
+  /* Visible so the ⋮ menu can spill past the card; the crop clips itself. */
+  overflow: visible;
   cursor: pointer;
   display: flex;
   flex-direction: column;
 }
+/* An open menu has to paint over the tiles after it in the grid. */
+.deal-tile.menu-open { z-index: 26; }
 .deal-tile.expired { opacity: 0.55; }
 .deal-tile-img {
   /* Fixed box so a grid row lines up whatever shape the ad crop is. */
@@ -875,6 +878,7 @@ html[data-theme='dark'] .skeleton::after {
   background: var(--md-surface);
   overflow: hidden;
   position: relative;
+  border-radius: var(--radius-l) var(--radius-l) 0 0;
 }
 .deal-tile-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* No picture: a short marker band, not an empty frame the size of a photo. */
@@ -900,8 +904,14 @@ html[data-theme='dark'] .skeleton::after {
 .deal-tile-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 /* Rank pill (left) and add button (right) share one 28px band at the top of
    the tile so they read as a pair and never touch the card edge. */
+/* The ⋮ control sits in that band; its menu hangs below, right-aligned and
+   allowed to be wider than the (narrow) tile. */
+.deal-tile-menu-wrap { position: absolute; right: 8px; top: 8px; z-index: 26; }
+.deal-tile-menu { min-width: 170px; }
+.deal-tile-menu button { padding: 10px 12px; font-size: 13.5px; }
+.deal-tile-menu button:disabled { opacity: 0.45; cursor: default; }
 .deal-tile-add {
-  position: absolute; right: 8px; top: 8px;
+  position: relative;
   width: 28px; height: 28px; border-radius: 999px;
   display: grid; place-items: center;
   font-size: 17px;
