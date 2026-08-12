@@ -226,12 +226,17 @@ export async function processPhotos(env, { dryRun = false } = {}) {
 
       for (const { entry, name } of files) {
         const r = byFile.get(name)
+        // `error` is only fatal when the extraction is actually unusable. The
+        // model also uses it to flag a caveat about an otherwise complete read
+        // ("multiple SKUs at one price — reported the main one"), and throwing
+        // that data away sent a perfectly good deal to the Failed pile.
+        const usable = r && r.name && r.price > 0 && r.qty > 0 && UNITS.includes(r.unit)
         const bad =
           !r ? 'No extraction returned.'
+          : usable ? null
           : r.error ? r.error
           : !r.name || !(r.price > 0) ? 'Could not read a product + price.'
-          : !(r.qty > 0) || !UNITS.includes(r.unit) ? 'Could not read the quantity/unit.'
-          : null
+          : 'Could not read the quantity/unit.'
         if (bad) {
           entry.status = 'failed'
           entry.error = String(bad)
@@ -256,19 +261,26 @@ export async function processPhotos(env, { dryRun = false } = {}) {
           entry.groceryType = GROCERY_TYPES.includes(r.groceryType) ? r.groceryType : 'other'
         }
         if (Number.isInteger(r.minQty) && r.minQty >= 2) entry.minQty = r.minQty
-        if (r.note) entry.note = String(r.note)
+        const caveat = r.error ? String(r.error) : null
+        const note = [r.note && String(r.note), caveat].filter(Boolean).join(' · ')
+        if (note) entry.note = note
         ok++
         log(`  ${entry.id}: ${entry.itemName} — $${entry.price} / ${entry.qty} ${entry.unit}${match ? ` (matches "${match.name}")` : ''}`)
 
         // Auto-approve (default): a hand-cropped single deal read by Sonnet is
         // reliable enough that reviewing 70+ cards one by one costs more than
-        // it catches. Two cases still stop for the user, because no model can
+        // it catches. Three cases still stop for the user, because no model can
         // resolve them from the picture: a `un` extraction (no size printed
-        // anywhere, so the price isn't comparable — §12) and a NEW product
-        // priced by weight-less count. Failed extractions stay queued as well.
+        // anywhere, so the price isn't comparable — §12), a read the model
+        // flagged a caveat on, and a NEW product priced by weight-less count.
+        // Failed extractions stay queued as well.
         if (!AUTO_APPROVE) continue
         if (entry.unit === 'un') {
           log('    → left in Review (no size found — needs a weight)')
+          continue
+        }
+        if (caveat) {
+          log(`    → left in Review (${caveat})`)
           continue
         }
         let imgUrl = null

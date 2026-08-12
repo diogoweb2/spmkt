@@ -143,6 +143,11 @@ export default function Review({ db, update, push }) {
           <div className="lbl" style={{ margin: '14px 0 6px' }}>Failed</div>
           {failed.map((entry) => (
             <div key={entry.id} className="card review-card">
+              {/* The crop is the whole point of "Enter manually" — without it
+                  there is nothing to read the price off. Flyer crops are kept
+                  in Storage (§17), so show them here too, not just on ready
+                  cards; FlyerThumb hides itself if the image is gone. */}
+              {entry.path && <FlyerThumb entry={entry} />}
               <div className="rc-name">⚠️ Couldn't read this photo</div>
               <p className="muted small" style={{ margin: '6px 0 12px' }}>{entry.error ?? 'Extraction failed.'}</p>
               <div style={{ display: 'flex', gap: 8 }}>
