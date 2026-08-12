@@ -26,6 +26,8 @@
     "reprocess:dry": "node scripts/flyers/reprocess-review.mjs --dry-run",
     "regroup": "node --import ./scripts/flyers/src-loader.mjs scripts/flyers/regroup.mjs",
     "regroup:dry": "node --import ./scripts/flyers/src-loader.mjs scripts/flyers/regroup.mjs --dry-run",
+    "remind:deals": "node scripts/reminders/weekly-deals.mjs",
+    "remind:deals:dry": "node scripts/reminders/weekly-deals.mjs --dry-run",
     "dedupe": "node scripts/flyers/dedupe-records.mjs",
     "dedupe:dry": "node scripts/flyers/dedupe-records.mjs --dry-run"
   },
