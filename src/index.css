@@ -819,6 +819,19 @@ html[data-theme='dark'] .skeleton::after {
 .flyer-more { text-align: center; padding: 14px 0 4px; }
 
 /* Review progress (§17): reviewed pages recede, unreviewed ones stand out. */
+/* 📄 §17: the flyer link for the open store, shown so a wrong one is visible,
+   with an inline editor to correct it. */
+.flyer-url { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.flyer-url-link {
+  color: var(--md-primary); text-decoration: underline;
+  overflow-wrap: anywhere; flex: 1 1 200px; min-width: 0;
+}
+.flyer-url-input {
+  flex: 1 1 220px; min-width: 0;
+  padding: 6px 10px; font-size: 13px;
+  border: 1px solid var(--md-outline); border-radius: 8px;
+  background: var(--md-surface); color: var(--md-on-surface);
+}
 .flyer-progress { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; }
 .flyer-progress-bar {
   flex: 1; height: 6px; border-radius: 3px;

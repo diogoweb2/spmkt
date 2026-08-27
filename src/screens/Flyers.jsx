@@ -9,7 +9,7 @@
 // what to import, so the model only ever sees one deal at a time.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FLYER_STORES, loadFlyer, cropPage } from '../lib/flyers'
+import { FLYER_STORES, loadFlyer, cropPage, storeUrl } from '../lib/flyers'
 import { addPhoto } from '../lib/photos'
 import { uid } from '../lib/db'
 
@@ -60,6 +60,29 @@ export default function Flyers({ db, update }) {
   // whenever the flyer changes, or page 1 of Superstore's boxes would be drawn
   // over page 1 of Metro's, in positions that match nothing on the ad.
   const [queued, setQueued] = useState([])
+  // The flyer link being edited (null = not editing). The built-in URLs go
+  // stale, so the link is shown on screen and can be corrected by hand.
+  const [editUrl, setEditUrl] = useState(null)
+
+  // The page this store's flyer is fetched from: the user's override if there
+  // is one (db.flyerUrls), else the built-in FLYER_STORES URL.
+  const url = storeUrl(db, store)
+
+  // Save a corrected flyer link for this store (empty = back to the built-in
+  // one). A different link means a different flyer, so the page numbers marked
+  // reviewed no longer describe anything: this store's progress is deleted.
+  const saveUrl = (next) => {
+    const clean = (next || '').trim().replace(/\/+$/, '')
+    setEditUrl(null)
+    const target = clean || store.url
+    if (target === url) return // unchanged — keep the progress
+    update((d) => {
+      d.flyerUrls ??= {}
+      if (clean && clean !== store.url) d.flyerUrls[store.name] = clean
+      else delete d.flyerUrls[store.name]
+      if (d.flyerReview) delete d.flyerReview[store.name]
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -68,14 +91,14 @@ export default function Flyers({ db, update }) {
     setFlyer(null)
     setPage(null)
     setQueued([])
-    loadFlyer(store, { upcoming })
+    loadFlyer(store, { upcoming, base: url })
       .then((f) => !cancelled && setFlyer(f))
       .catch((err) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false))
     return () => {
       cancelled = true
     }
-  }, [store, upcoming])
+  }, [store, upcoming, url])
 
   // The db store this flyer belongs to, created on first crop so a queued deal
   // always lands on a real store (the queue entry only carries the id).
@@ -205,6 +228,45 @@ export default function Flyers({ db, update }) {
           <span className="muted small" style={{ alignSelf: 'center' }}>
             · {nQueued} queued for Review
           </span>
+        )}
+      </div>
+
+      {/* The link this store's flyer is read from — visible so a wrong one is
+          obvious, and editable so it can be corrected (§17). */}
+      <div className="flyer-url">
+        {editUrl == null ? (
+          <>
+            <a href={flyer?.url || url} target="_blank" rel="noreferrer" className="small flyer-url-link">
+              {flyer?.url || url}
+            </a>
+            {url !== store.url && <span className="muted small">custom</span>}
+            <button className="chip" onClick={() => setEditUrl(url)}>
+              ✏️ Edit link
+            </button>
+          </>
+        ) : (
+          <>
+            <input
+              className="flyer-url-input"
+              value={editUrl}
+              onChange={(e) => setEditUrl(e.target.value)}
+              placeholder={store.url}
+              spellCheck={false}
+              autoFocus
+            />
+            <button className="chip on" onClick={() => saveUrl(editUrl)}>
+              Save
+            </button>
+            <button className="chip" onClick={() => setEditUrl(null)}>
+              Cancel
+            </button>
+            {url !== store.url && (
+              <button className="chip" onClick={() => saveUrl('')}>
+                Default
+              </button>
+            )}
+            <span className="muted small">Saving a different link deletes the pages marked reviewed for {store.name}.</span>
+          </>
         )}
       </div>
 

@@ -24,6 +24,16 @@ export const FLYER_STORES = [
   { name: 'Superstore', url: 'https://www.flyers-on-line.com/real-canadian-superstore/ontario' },
 ]
 
+// The flyer page actually used for a store: the user's override from
+// `db.flyerUrls` if there is one, else the built-in FLYER_STORES URL. The
+// built-in list goes stale (a chain changes its flyers-on-line slug, or the
+// Ontario edition moves), which showed up as the wrong store's flyer — so the
+// URL is visible and editable on the screen (§17).
+export function storeUrl(db, store) {
+  const override = db?.flyerUrls?.[store.name]
+  return (typeof override === 'string' && override.trim()) || store.url
+}
+
 // Ordered, deduped page-image URLs from a flyer page's HTML. Port of
 // flyerImageUrls() in scripts/flyers/shared.mjs — same dedupe on the URL
 // without its ?v= cachebuster (each page is linked both bare and versioned,
@@ -54,8 +64,10 @@ export function parseValidUntil(html) {
 // Load one store's flyer: { url, pages: [imageUrl], validUntil }.
 // `upcoming` fetches next week's flyer (…/upcoming-flyer) — the deals can't be
 // bought yet, so crops from it are flagged and show the 🔜 badge (§12).
-export async function loadFlyer(store, { upcoming = false } = {}) {
-  const url = upcoming ? `${store.url}/upcoming-flyer` : store.url
+// `base` is the store page to fetch (storeUrl(): the override or the default).
+export async function loadFlyer(store, { upcoming = false, base } = {}) {
+  const root = (base || store.url).replace(/\/+$/, '')
+  const url = upcoming ? `${root}/upcoming-flyer` : root
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Could not load the ${store.name} flyer (HTTP ${res.status}).`)
   const html = await res.text()
