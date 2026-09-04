@@ -6,7 +6,7 @@ import { canMerge, mergeItems, suggestName, targetUnit, groupIds, searchIndex } 
 import { itemRecords, recordNorm, pricesByStore, variantKey, variantLabel, flyerInfo, isComparable } from '../lib/analysis'
 import { buyTodayDeals, isUpcomingRec } from '../lib/buytoday'
 import { effectivePrice } from '../lib/cashback'
-import { addToRvList } from '../lib/rvlist'
+import { addToRvList, rvSentKeys, pruneRvSent } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
 import useSessionState from '../lib/useSessionState'
@@ -156,10 +156,9 @@ export default function Home({ db, update, push }) {
 
   // ---------- RV Groceries send (unchanged behavior) ----------
   const [rvState, setRvState] = useState({})
-  const rvSent = useMemo(
-    () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
-    [db.rvSent],
-  )
+  // A week-old marker no longer counts — the ✓ drops back to ➕ on the next
+  // visit (see rvSentKeys).
+  const rvSent = useMemo(() => rvSentKeys(db.rvSent), [db.rvSent])
 
   async function sendToRv(d) {
     setRvState((s) => ({ ...s, [d.key]: 'pending' }))
@@ -173,10 +172,7 @@ export default function Home({ db, update, push }) {
       setRvState((s) => ({ ...s, [d.key]: undefined }))
       update((next) => {
         const now = Date.now()
-        next.rvSent = (next.rvSent ?? []).filter((s) => {
-          const rec = next.records.find((r) => r.id === s.recId)
-          return rec && (rec.validUntil == null || rec.validUntil >= now)
-        })
+        pruneRvSent(next, now)
         next.rvSent.push({ itemId: d.item.id, recId: d.rec.id, ts: now })
       })
       navigator.vibrate?.(15)

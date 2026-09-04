@@ -6,7 +6,7 @@ import {
 } from '../lib/analysis'
 import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel, unitKind } from '../lib/units'
 import { effectivePrice } from '../lib/cashback'
-import { addToRvList } from '../lib/rvlist'
+import { addToRvList, rvSentKeys, pruneRvSent } from '../lib/rvlist'
 import { toast } from '../lib/toast'
 import MonthlyChart from '../components/MonthlyChart'
 import UnitToggle from '../components/UnitToggle'
@@ -33,10 +33,9 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   // Full-screen 🎉 when the price just saved is the best ever — a hit of
   // motivation to keep hunting deals. Shown once per arrival, then dismissed.
   const [celebrated, setCelebrated] = useState(false)
-  const rvSent = useMemo(
-    () => new Set((db.rvSent ?? []).map((s) => `${s.itemId}|${s.recId}`)),
-    [db.rvSent],
-  )
+  // Markers older than a week are ignored, so the ✓ clears itself the next
+  // time this page is opened (see rvSentKeys).
+  const rvSent = useMemo(() => rvSentKeys(db.rvSent), [db.rvSent])
   // No item for this id (deleted, merged away, or a bad push): show a way back
   // instead of a blank screen — `return null` here renders nothing at all, not
   // even the nav bar, and looks like the app crashed.
@@ -143,10 +142,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
       setRvState((s) => ({ ...s, [store.id]: undefined }))
       update((next) => {
         const nowTs = Date.now()
-        next.rvSent = (next.rvSent ?? []).filter((s) => {
-          const r = next.records.find((r) => r.id === s.recId)
-          return r && (r.validUntil == null || r.validUntil >= nowTs)
-        })
+        pruneRvSent(next, nowTs)
         next.rvSent.push({ itemId: item.id, recId: rec.id, ts: nowTs })
       })
       navigator.vibrate?.(15)

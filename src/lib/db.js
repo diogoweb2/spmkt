@@ -20,7 +20,7 @@ export const DEFAULT_DB = {
   notes: [], // {id, type: 'bug'|'idea', text, done, ts}
   ignored: [], // {id, name, ts} — products the user deleted & ignored; flyer import skips their kind
   pushTokens: [], // {token, ua, ts} — FCM web-push tokens; the flyer job notifies these devices
-  rvSent: [], // {itemId, recId, ts} — deals sent to the RV Groceries app; keeps the ✓ on the deal row while that record is still the current deal (one-way: nothing in the RV app ever syncs back)
+  rvSent: [], // {itemId, recId, ts} — deals sent to the RV Groceries app; keeps the ✓ on the deal row while that record is still the current deal, for up to 7 days (one-way: nothing in the RV app ever syncs back)
   photoQueue: [], // 📷 photo mode: {id, path, storeId, status: 'pending'|'ready'|'failed', ts, ...extracted fields} — see src/lib/photos.js and scripts/photos/process.mjs
   flyerUrls: {}, // 📄 §17: store name -> the flyer page URL to fetch, when the user has overridden the built-in FLYER_STORES one (the built-in list goes stale). Changing one wipes that store's flyerReview progress.
   flyerReview: {}, // 📄 §17: "<store>|<validUntil>" -> {pages: [n], total, validUntil, ts} — which flyer pages have been looked at, so progress survives a reload
