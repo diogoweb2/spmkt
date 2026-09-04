@@ -378,7 +378,10 @@ export default function ItemDetail({ db, update, push, pop, view }) {
               </p>
               <div className="list">
                 {members.map(({ origName, count }) => (
-                  <div key={origName} className="row" style={{ cursor: 'default' }}>
+                  /* The shelf name of the price this page was opened from gets
+                     the ring too — in a group of a dozen names, that's the one
+                     the user is looking for on the shelf. */
+                  <div key={origName} className={`row${origName === cameFrom?.origName ? ' seen' : ''}`} style={{ cursor: 'default' }}>
                     <div className="grow">
                       <div className="title small" style={{ fontSize: 14, fontStyle: 'italic' }}>“{origName}”</div>
                       <div className="sub">{count} price{count === 1 ? '' : 's'}</div>
