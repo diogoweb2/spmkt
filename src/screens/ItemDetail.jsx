@@ -376,6 +376,15 @@ export default function ItemDetail({ db, update, push, pop, view }) {
               <p className="muted small" style={{ marginTop: -6, marginBottom: 6 }}>
                 Shelf names merged into “{item.name}”. Split one back into its own product with ⤴.
               </p>
+              {/* No ring to show: the price this page was opened from was
+                  imported under the group's own name, so it isn't one of the
+                  members below. Say so, rather than leaving the user hunting
+                  for a highlight that can't exist. */}
+              {cameFrom && !cameFrom.origName && (
+                <p className="muted small" style={{ marginTop: -2, marginBottom: 6 }}>
+                  The price you opened has no shelf name of its own — it was logged as “{item.name}”.
+                </p>
+              )}
               <div className="list">
                 {members.map(({ origName, count }) => (
                   /* The shelf name of the price this page was opened from gets
