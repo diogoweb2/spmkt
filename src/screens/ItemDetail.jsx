@@ -41,6 +41,9 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   // Full-screen 🎉 when the price just saved is the best ever — a hit of
   // motivation to keep hunting deals. Shown once per arrival, then dismissed.
   const [celebrated, setCelebrated] = useState(false)
+  // Tap an ad crop to see it full-screen: the flyer picture is often the only
+  // way to recognise a deal whose shelf name was never stored (§15c).
+  const [zoomImg, setZoomImg] = useState(null)
   // Markers older than a week are ignored, so the ✓ clears itself the next
   // time this page is opened (see rvSentKeys).
   const rvSent = useMemo(() => rvSentKeys(db.rvSent), [db.rvSent])
@@ -298,6 +301,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                       className={`row${selected ? ' sel' : ''}${rec.id === view.recId ? ' seen' : ''}`}
                       onClick={() => byStore.length > 1 && toggleCompare(store.id)}
                     >
+                      <AdCrop rec={rec} onZoom={setZoomImg} />
                       <div className="grow">
                         <div className="title">
                           {selected ? '☑️ ' : rec.id === byStore[0].rec.id && byStore.length > 1 ? '🏆 ' : ''}{store.name}
@@ -458,6 +462,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                 const expired = isExpired(r)
                 return (
                   <div key={r.id} className={`row${expired ? ' expired-rec' : ''}${r.id === view.recId ? ' seen' : ''}`} style={{ cursor: 'default' }}>
+                    <AdCrop rec={r} onZoom={setZoomImg} />
                     <button
                       className="grow"
                       style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit', minWidth: 0 }}
@@ -498,7 +503,33 @@ export default function ItemDetail({ db, update, push, pop, view }) {
       {view.fromSave && v?.level === 'best' && !celebrated && (
         <Celebration price={best != null ? fmt(best).split(' / ')[0] : null} onClose={() => setCelebrated(true)} />
       )}
+
+      {zoomImg && (
+        <div className="img-zoom" role="button" aria-label="Close picture" onClick={() => setZoomImg(null)}>
+          <img src={zoomImg} alt="Flyer ad for this price" />
+        </div>
+      )}
     </div>
+  )
+}
+
+// The ad crop kept on a flyer record (§17) as a row thumbnail — for the many
+// deals whose shelf name was never stored, the picture is what identifies the
+// product in the store. Tap it to see the ad full-screen; nothing is rendered
+// for records with no image (manual entries, older imports).
+function AdCrop({ rec, onZoom }) {
+  if (!rec.imgUrl) return null
+  return (
+    <img
+      className="row-crop"
+      src={rec.imgUrl}
+      alt="Flyer ad"
+      loading="lazy"
+      role="button"
+      aria-label="See the flyer ad"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onZoom(rec.imgUrl) }}
+    />
   )
 }
 

@@ -208,6 +208,20 @@ h2 { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
 
 .row-store { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .row-logo { height: 20px; max-width: 84px; object-fit: contain; display: block; }
+/* Ad crop thumbnail on a product-page row (§15c): the flyer picture is often
+   the only way to recognise a deal whose shelf name was never stored. */
+.row-crop {
+  width: 54px; height: 42px; flex-shrink: 0;
+  object-fit: cover; border-radius: 8px; cursor: zoom-in;
+  background: var(--md-surface-container); border: 1px solid var(--md-outline-variant);
+}
+/* Tap-to-enlarge overlay for that crop. */
+.img-zoom {
+  position: fixed; inset: 0; z-index: 45;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: var(--md-scrim); cursor: zoom-out;
+}
+.img-zoom img { max-width: 100%; max-height: 100%; border-radius: var(--radius); box-shadow: var(--md-shadow-3); }
 
 /* "vs your last buy" delta */
 .delta { font-size: 11.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
