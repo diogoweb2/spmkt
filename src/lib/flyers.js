@@ -61,6 +61,15 @@ export function parseValidUntil(html) {
   return isNaN(dt) ? null : dt.getTime()
 }
 
+// Flyer weeks run Thursday → Wednesday. End of the week `now` falls in: the
+// first Wednesday on or after today, 23:59:59 local.
+export function flyerWeekEnd(now = Date.now()) {
+  const d = new Date(now)
+  d.setHours(23, 59, 59, 0)
+  d.setDate(d.getDate() + ((3 - d.getDay() + 7) % 7))
+  return d.getTime()
+}
+
 // Load one store's flyer: { url, pages: [imageUrl], validUntil }.
 // `upcoming` fetches next week's flyer (…/upcoming-flyer) — the deals can't be
 // bought yet, so crops from it are flagged and show the 🔜 badge (§12).
@@ -73,7 +82,11 @@ export async function loadFlyer(store, { upcoming = false, base } = {}) {
   const html = await res.text()
   const pages = flyerImageUrls(html)
   if (!pages.length) throw new Error(`No flyer pages found for ${store.name}${upcoming ? " — next week's flyer may not be up yet." : '.'}`)
-  return { url, pages, validUntil: parseValidUntil(html) }
+  // Never null: a null validUntil means "manual entry, never expires" (§10), so
+  // a crop off a dateless page used to become an immortal deal. A page with no
+  // "Valid from …" line is the upcoming flyer that isn't published yet — it
+  // serves the CURRENT week's page images — so those deals end this Wednesday.
+  return { url, pages, validUntil: parseValidUntil(html) ?? flyerWeekEnd() }
 }
 
 // Crop a normalized box ({x, y, w, h}, each 0-1 of the page) out of a page

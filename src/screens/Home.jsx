@@ -118,13 +118,37 @@ export default function Home({ db, update, push }) {
   // actually brought in deals (§12), otherwise the chip stays hidden.
   const hasUpcoming = useMemo(() => db.records.some((r) => isUpcomingRec(r)), [db.records])
   const upcomingOn = onlyUpcoming && hasUpcoming
-  const groups = useMemo(
+  // Store chips narrow the deal pool BEFORE cheapest-store-wins runs (§11b):
+  // with only Superstore picked, its $10.88 steak shows even though No Frills
+  // sells the same cut for $8.88 — otherwise a store's chip only ever surfaced
+  // the items that store wins outright. null = every store (no scoping).
+  const pickedStores = useMemo(
+    () => (storesOff.size ? new Set(db.stores.map((s) => s.id).filter((id) => !storesOff.has(id))) : null),
+    [db.stores, storesOff],
+  )
+  // Unscoped deals — what the store chip row is built from, so a store keeps
+  // its chip while it's the only one deselected.
+  const groupsAll = useMemo(
     () => meatDeals(db, { includeExpired: showExpired, onlyUpcoming: upcomingOn }),
     [db, showExpired, upcomingOn],
   )
-  const grocery = useMemo(
+  const groceryAll = useMemo(
     () => groceryDeals(db, { includeExpired: showExpired, onlyUpcoming: upcomingOn }),
     [db, showExpired, upcomingOn],
+  )
+  const groups = useMemo(
+    () =>
+      pickedStores
+        ? meatDeals(db, { includeExpired: showExpired, onlyUpcoming: upcomingOn, storeIds: pickedStores })
+        : groupsAll,
+    [db, showExpired, upcomingOn, pickedStores, groupsAll],
+  )
+  const grocery = useMemo(
+    () =>
+      pickedStores
+        ? groceryDeals(db, { includeExpired: showExpired, onlyUpcoming: upcomingOn, storeIds: pickedStores })
+        : groceryAll,
+    [db, showExpired, upcomingOn, pickedStores, groceryAll],
   )
   const meatFlat = MEAT_TYPES.flatMap((t) => groups[t] ?? [])
   const allDeals = all ? [...meatFlat, ...grocery] : meat ? meatFlat : grocery
@@ -165,10 +189,12 @@ export default function Home({ db, update, push }) {
 
   // ---------- deals filtering ----------
   const dealStores = useMemo(() => {
+    const meatFlatAll = MEAT_TYPES.flatMap((t) => groupsAll[t] ?? [])
+    const unscoped = all ? [...meatFlatAll, ...groceryAll] : meat ? meatFlatAll : groceryAll
     const map = new Map()
-    for (const d of allDeals) map.set(d.store.id, d.store)
+    for (const d of unscoped) map.set(d.store.id, d.store)
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [groups, grocery, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [groupsAll, groceryAll, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (set, setSet, key) => {
     const next = new Set(set)
@@ -182,8 +208,8 @@ export default function Home({ db, update, push }) {
   // finds the group "meatballs" when "PC meatballs" is one of its members.
   const names = useMemo(() => searchIndex(db), [db])
   const matches = (item) => !qNorm || (names.get(item.id) ?? item.name.toLowerCase()).includes(qNorm)
+  // No store check here: the store chips already scoped the pool (pickedStores).
   const show = (d) =>
-    !storesOff.has(d.store.id) &&
     (d.rating == null || ratingsOn.has(d.rating)) &&
     matches(d.item) &&
     // 🎉 #1 only: keep just deals that are the cheapest price ever recorded

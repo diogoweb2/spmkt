@@ -88,14 +88,18 @@ export function dealRating(item, norm) {
 // the running — the latest record per store still wins — and tags the deal
 // `expired: true` so the UI can mark it. `onlyUpcoming` (Home's 🔜 Upcoming
 // toggle) narrows the pool to this week's fresh next-week-flyer records, so
-// only deals you can't buy today are shown. Every deal carries `nRecs`, the
-// item's full history size (all records, expired or not).
-function bestDeals(db, item, now, { includeExpired = false, onlyUpcoming = false } = {}) {
+// only deals you can't buy today are shown. `storeIds` (Home's store chips)
+// restricts the pool to the picked stores, so cheapest-store-wins runs INSIDE
+// the selection — picking one store shows that store's own prices, not just
+// the items it happens to win outright. Every deal carries `nRecs`, the item's
+// full history size (all records, expired or not).
+function bestDeals(db, item, now, { includeExpired = false, onlyUpcoming = false, storeIds = null } = {}) {
   const all = itemRecords(db, item.id)
   let recs = includeExpired
     ? all
     : all.filter((r) => r.validUntil == null || r.validUntil >= now)
   if (onlyUpcoming) recs = recs.filter((r) => isUpcomingRec(r, now))
+  if (storeIds) recs = recs.filter((r) => storeIds.has(r.storeId))
   const pick = (list, normOf) => {
     const byStore = new Map()
     for (const r of list) {
@@ -130,12 +134,12 @@ function bestDeals(db, item, now, { includeExpired = false, onlyUpcoming = false
 }
 
 // Current best deal(s) per meat item, grouped by meat type.
-export function meatDeals(db, { includeExpired = false, onlyUpcoming = false } = {}) {
+export function meatDeals(db, { includeExpired = false, onlyUpcoming = false, storeIds = null } = {}) {
   const now = Date.now()
   const groups = {}
   for (const item of db.items) {
     if (item.category !== 'meat') continue
-    for (const best of bestDeals(db, item, now, { includeExpired, onlyUpcoming })) {
+    for (const best of bestDeals(db, item, now, { includeExpired, onlyUpcoming, storeIds })) {
       const type = MEAT_TYPES.includes(item.meatType)
         ? item.meatType
         : guessMeatType(item.name) ?? 'other'
@@ -160,13 +164,13 @@ export function meatDeals(db, { includeExpired = false, onlyUpcoming = false } =
 // used as a filter, and `market` thresholds (classify-grocery-market.mjs) that
 // rate deals just like meat; rating stays null until researched. Unlabeled
 // items count as "other".
-export function groceryDeals(db, { includeExpired = false, onlyUpcoming = false } = {}) {
+export function groceryDeals(db, { includeExpired = false, onlyUpcoming = false, storeIds = null } = {}) {
   const now = Date.now()
   const out = []
   for (const item of db.items) {
     if (item.category === 'meat') continue
     const gtype = GROCERY_TYPES.includes(item.groceryType) ? item.groceryType : 'other'
-    for (const best of bestDeals(db, item, now, { includeExpired, onlyUpcoming })) {
+    for (const best of bestDeals(db, item, now, { includeExpired, onlyUpcoming, storeIds })) {
       out.push({ ...best, gtype, rating: best.byPiece ? null : dealRating(item, best.norm), ultra: false, isMeat: false })
     }
   }
