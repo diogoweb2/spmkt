@@ -40,6 +40,8 @@ export function variantLabel(rec) {
   ].join(', ')
 }
 
+const WEEK_MS = 7 * 24 * 3600 * 1000
+
 // Flyer-imported records carry a validity window. Returns null for normal
 // records; otherwise { text, valid } for a badge next to the product name —
 // expired flyer prices stay in the db as reference.
@@ -50,11 +52,16 @@ export function flyerInfo(rec) {
   const url = rec.flyerUrl ? `${rec.flyerUrl}${rec.flyerPage ? `#p=${rec.flyerPage}` : ''}` : null
   // Imported from a store's upcoming (next-week) flyer: 🔜 badge so the user
   // knows the deal isn't buyable today, only starting when the flyer goes live.
-  const upcoming = !!rec.upcoming
+  // The `upcoming` flag is permanent on the record, but the state it describes
+  // is not — once that flyer week starts the deal IS buyable, and once it ends
+  // it's history, so 🔜 is only shown while the week is still ahead. A flyer
+  // week runs Thursday→Wednesday, so it starts a week before its validUntil.
+  if (!rec.validUntil) return { text: rec.upcoming ? '🔜 upcoming' : '📰 flyer', valid: true, url, upcoming: !!rec.upcoming }
+  const now = Date.now()
+  const upcoming = !!rec.upcoming && now < rec.validUntil - WEEK_MS
   const tag = upcoming ? '🔜 upcoming' : '📰 flyer'
-  if (!rec.validUntil) return { text: tag, valid: true, url, upcoming }
   const d = new Date(rec.validUntil).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-  const valid = Date.now() <= rec.validUntil
+  const valid = now <= rec.validUntil
   return { text: valid ? `${tag} until ${d}` : `${tag} ended ${d}`, valid, url, upcoming }
 }
 
