@@ -893,6 +893,29 @@ html[data-theme='dark'] .skeleton::after {
 .deal-tile.great .rank-total { opacity: 0.85; }
 /* Same signal in 📋 List: a thick accent bar down the left of the row. */
 .row.great { box-shadow: inset 3px 0 0 0 var(--accent); border-radius: 8px; padding-left: 8px; }
+
+/* 👁 Just viewed: the row/tile of the product page the user just came back
+   from — Home scrolls it into view and rings it in blue, deliberately not the
+   green used by 🔥 great deals or selection. The ring lives on a pseudo-
+   element so it stacks with those instead of replacing their box-shadow; it
+   flashes bright, then settles to a quiet marker that stays until the next
+   navigation. */
+.row.seen { background: color-mix(in srgb, var(--md-info) 9%, transparent); border-radius: 10px; }
+.row.seen + .row::before, .row + .row.seen::before { display: none; }
+.row.seen::after, .deal-tile.seen::after {
+  content: ''; position: absolute; inset: -2px; border-radius: 12px;
+  pointer-events: none;
+  box-shadow: 0 0 0 2.5px var(--md-info);
+  animation: seen-flash 2s ease-out forwards;
+}
+.deal-tile.seen::after { inset: -3px; border-radius: calc(var(--radius-l) + 3px); }
+@keyframes seen-flash {
+  0%, 65% { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row.seen::after, .deal-tile.seen::after { animation: none; opacity: 0.6; }
+}
 .deal-tile-img {
   /* Fixed box so a grid row lines up whatever shape the ad crop is. */
   aspect-ratio: 4 / 3;

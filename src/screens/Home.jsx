@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { fmtDisplay, fmtMoney, fmtQty } from '../lib/units'
 import { meatDeals, groceryDeals, MEAT_TYPES, MEAT_TYPE_LABEL, GROCERY_TYPES, GROCERY_TYPE_LABEL, PROCESSING_LABEL, RATING } from '../lib/meat'
 import { ignoreItems } from '../lib/ignore'
@@ -9,6 +9,7 @@ import { effectivePrice } from '../lib/cashback'
 import { addToRvList, rvSentKeys, pruneRvSent } from '../lib/rvlist'
 import { storeLogo } from '../lib/logos'
 import { toast } from '../lib/toast'
+import { lastSeenItem } from '../lib/lastseen'
 import useSessionState from '../lib/useSessionState'
 import PhotoLink from '../components/PhotoLink'
 import CompareReport from '../components/CompareReport'
@@ -109,6 +110,20 @@ export default function Home({ db, update, push }) {
   const [pendingAdd, setPendingAdd] = useState(null) // add flow waiting for a store pick
   const [buyTodayOpen, setBuyTodayOpen] = useState(false)
   const press = useRef({ timer: null, long: false })
+
+  // Coming back from a product page remounts Home at the top of the list, so
+  // the row the user was just on is marked (a ring + tint) and scrolled into
+  // view — once per mount, whichever surface it lands on (§9b).
+  const [seenId] = useState(lastSeenItem)
+  const seenEl = useRef(null)
+  const scrolled = useRef(false)
+  // First matching element wins: a meat item can have one row per variant.
+  const seenRef = (el) => { if (el && !seenEl.current) seenEl.current = el }
+  useEffect(() => {
+    if (scrolled.current || !seenEl.current) return
+    scrolled.current = true
+    seenEl.current.scrollIntoView({ block: 'center' })
+  })
 
   // "Buy it today!" — Wednesdays only (after the upcoming-flyer import):
   // products whose live deal beats next week's flyer, so waiting costs more.
@@ -590,6 +605,7 @@ export default function Home({ db, update, push }) {
                     key={d.key}
                     d={d}
                     db={db}
+                    seenRef={d.item.id === seenId ? seenRef : null}
                     delta={lastBuyDelta(db, d)}
                     pr={priceRank(db, d)}
                     rvStatus={rvState[d.key] ?? (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)}
@@ -625,7 +641,8 @@ export default function Home({ db, update, push }) {
                     return (
                       <button
                         key={d.key}
-                        className={`row${isSel ? ' sel' : ''}${isGreat(pr) ? ' great' : ''}`}
+                        ref={d.item.id === seenId ? seenRef : null}
+                        className={`row${isSel ? ' sel' : ''}${isGreat(pr) ? ' great' : ''}${d.item.id === seenId ? ' seen' : ''}`}
                         onPointerDown={() => holdStart(d)}
                         onPointerUp={holdEnd}
                         onPointerLeave={holdEnd}
@@ -752,7 +769,8 @@ export default function Home({ db, update, push }) {
                 return (
                   <button
                     key={key}
-                    className={`row${isSel ? ' sel' : ''}`}
+                    ref={item.id === seenId ? seenRef : null}
+                    className={`row${isSel ? ' sel' : ''}${item.id === seenId ? ' seen' : ''}`}
                     onPointerDown={() => holdStart(row)}
                     onPointerUp={holdEnd}
                     onPointerLeave={holdEnd}
@@ -948,12 +966,13 @@ export default function Home({ db, update, push }) {
 // (§17) above the price. A deal with no picture — a manual price, a photo
 // capture, or an older import — renders the same card without the image area,
 // so the grid never has holes in it.
-function DealTile({ d, db, delta, pr, rvStatus, menuOpen, onMenu, onOpen, onAdd, onMerge, onEdit }) {
+function DealTile({ d, db, delta, pr, rvStatus, menuOpen, seenRef, onMenu, onOpen, onAdd, onMerge, onEdit }) {
   const img = d.rec.imgUrl
   const great = isGreat(pr)
   return (
     <div
-      className={`deal-tile${great ? ' great' : ''}${d.expired ? ' expired' : ''}${menuOpen ? ' menu-open' : ''}`}
+      ref={seenRef}
+      className={`deal-tile${great ? ' great' : ''}${d.expired ? ' expired' : ''}${menuOpen ? ' menu-open' : ''}${seenRef ? ' seen' : ''}`}
       title={great ? `Great deal — cheapest of ${pr.total} prices in history` : undefined}
       onClick={onOpen}
       role="button"

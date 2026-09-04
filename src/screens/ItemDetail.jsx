@@ -8,6 +8,7 @@ import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnit
 import { effectivePrice } from '../lib/cashback'
 import { addToRvList, rvSentKeys, pruneRvSent } from '../lib/rvlist'
 import { toast } from '../lib/toast'
+import { markSeen } from '../lib/lastseen'
 import MonthlyChart from '../components/MonthlyChart'
 import UnitToggle from '../components/UnitToggle'
 import PhotoLink from '../components/PhotoLink'
@@ -36,6 +37,10 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   // Markers older than a week are ignored, so the ✓ clears itself the next
   // time this page is opened (see rvSentKeys).
   const rvSent = useMemo(() => rvSentKeys(db.rvSent), [db.rvSent])
+  // Remember which product this is, so going back to Home lands on its row
+  // instead of the top of the list (§9b). Every route into a product page —
+  // a deal row, an item row, a save in AddPrice — passes through here.
+  useEffect(() => { markSeen(view.itemId) }, [view.itemId])
   // No item for this id (deleted, merged away, or a bad push): show a way back
   // instead of a blank screen — `return null` here renders nothing at all, not
   // even the nav bar, and looks like the app crashed.
