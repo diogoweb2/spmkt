@@ -611,7 +611,7 @@ export default function Home({ db, update, push }) {
                     rvStatus={rvState[d.key] ?? (rvSent.has(`${d.item.id}|${d.rec.id}`) ? 'ok' : undefined)}
                     menuOpen={menuFor === d.key}
                     onMenu={() => setMenuFor(menuFor === d.key ? null : d.key)}
-                    onOpen={() => push({ name: 'item', itemId: d.item.id })}
+                    onOpen={() => push({ name: 'item', itemId: d.item.id, recId: d.rec.id })}
                     onAdd={() => { setMenuFor(null); sendToRv(d) }}
                     onMerge={() => {
                       // Merge needs a second product to pick, and the tiles have
@@ -651,7 +651,7 @@ export default function Home({ db, update, push }) {
                         onClick={() => {
                           if (press.current.long) { press.current.long = false; return }
                           if (selecting) return toggleSelect(d)
-                          push({ name: 'item', itemId: d.item.id })
+                          push({ name: 'item', itemId: d.item.id, recId: d.rec.id })
                         }}
                       >
                         <div className="grow">

@@ -166,9 +166,12 @@ export default function AddPrice({ db, update, push, pop, view }) {
   // Append a brand-new record (the normal path, and "it's a new price").
   function appendRecord(itemId, meat) {
     let adoptedKind = false
+    // Minted here, not inside the mutator, so the product page can be told
+    // which record to ring — "where did the price I just saved go?" (§15c).
+    const recId = uid('r')
     update((d) => {
       d.records.push({
-        id: uid('r'),
+        id: recId,
         itemId,
         storeId: store.id,
         price: finalPrice,
@@ -209,7 +212,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
       }
       if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
     })
-    push({ name: 'item', itemId, fromSave: adoptedKind || !byPiece })
+    push({ name: 'item', itemId, recId, fromSave: adoptedKind || !byPiece })
   }
 
   // "I typed it wrong before": overwrite the previous record at this store.
@@ -230,7 +233,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
       if (photoEntry) d.photoQueue = (d.photoQueue ?? []).filter((p) => p.id !== photoEntry.id)
     })
     toast('Price corrected — history unchanged')
-    push({ name: 'item', itemId: item.id })
+    push({ name: 'item', itemId: item.id, recId: prevHere.id })
   }
 
   function save() {
@@ -288,7 +291,7 @@ export default function AddPrice({ db, update, push, pop, view }) {
         (prevHere.validUntil ?? null) === validUntil && (prevHere.minQty ?? null) === minQtyNum
       if (same) {
         toast('Same price as last time — nothing new to save 👍')
-        push({ name: 'item', itemId: item.id })
+        push({ name: 'item', itemId: item.id, recId: prevHere.id })
         return
       }
       // Different price: new record, or fixing a typo?

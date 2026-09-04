@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { mergedMembers, unmergeName } from '../lib/merge'
 import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
@@ -16,7 +16,14 @@ import FlyerLink from '../components/FlyerLink'
 
 export default function ItemDetail({ db, update, push, pop, view }) {
   const item = db.items.find((i) => i.id === view.itemId)
-  const [pickedVariant, setPickedVariant] = useState(view.variant ?? null)
+  // The exact price this page was opened from — a deal row/tile on Home, or
+  // the price just saved in AddPrice. Its rows are ringed in "Where it's
+  // cheapest" and History so the user can see which of a dozen prices they
+  // came for; without it the page is a wall of stores (§15c).
+  const cameFrom = view.recId ? db.records.find((r) => r.id === view.recId) : null
+  // …and the page opens on that record's variant, not the newest one — a deal
+  // on frozen bone-in thighs must not land on the fresh-boneless tab.
+  const [pickedVariant, setPickedVariant] = useState(view.variant ?? (cameFrom ? variantKey(cameFrom) : null))
   const [compareSel, setCompareSel] = useState([])
   const [rvState, setRvState] = useState({})
   // History controls: cheapest-first by default so the best deals pop and
@@ -41,6 +48,12 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   // instead of the top of the list (§9b). Every route into a product page —
   // a deal row, an item row, a save in AddPrice — passes through here.
   useEffect(() => { markSeen(view.itemId) }, [view.itemId])
+  // `nearest`: nudge the ringed row into the viewport only when it is off
+  // screen, so arriving at the page still shows the title and verdict.
+  const cameFromEl = useRef(null)
+  useEffect(() => {
+    cameFromEl.current?.scrollIntoView({ block: 'nearest' })
+  }, [view.recId])
   // No item for this id (deleted, merged away, or a bad push): show a way back
   // instead of a blank screen — `return null` here renders nothing at all, not
   // even the nav bar, and looks like the app crashed.
@@ -281,7 +294,8 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                   return (
                     <button
                       key={store.id}
-                      className={`row${selected ? ' sel' : ''}`}
+                      ref={rec.id === view.recId ? cameFromEl : null}
+                      className={`row${selected ? ' sel' : ''}${rec.id === view.recId ? ' seen' : ''}`}
                       onClick={() => byStore.length > 1 && toggleCompare(store.id)}
                     >
                       <div className="grow">
@@ -431,7 +445,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                 const cls = best != null && norm <= best * 1.02 ? '' : norm >= worst * 0.98 && recs.length > 1 ? 'worst' : 'mid'
                 const expired = isExpired(r)
                 return (
-                  <div key={r.id} className={`row${expired ? ' expired-rec' : ''}`} style={{ cursor: 'default' }}>
+                  <div key={r.id} className={`row${expired ? ' expired-rec' : ''}${r.id === view.recId ? ' seen' : ''}`} style={{ cursor: 'default' }}>
                     <button
                       className="grow"
                       style={{ background: 'none', border: 'none', textAlign: 'left', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit', minWidth: 0 }}
