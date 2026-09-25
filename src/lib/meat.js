@@ -77,9 +77,9 @@ export function dealRating(item, norm) {
   return 'bad'
 }
 
-// An item's current deals: each store's latest non-expired record; the
-// cheapest store wins. Records with no validUntil (manual entries) never
-// expire. Returns up to TWO deals per item:
+// An item's current deals: each store's latest non-expired FLYER record; the
+// cheapest store wins. Manually added prices never appear here (§10).
+// Returns up to TWO deals per item:
 // - a comparable deal (normalized $/100g etc), and
 // - a by-piece deal (§3 reference `un` records on a weight/volume item,
 //   normalized per unit) — surfaced on Home so the user notices it and can
@@ -95,9 +95,14 @@ export function dealRating(item, norm) {
 // full history size (all records, expired or not).
 function bestDeals(db, item, now, { includeExpired = false, onlyUpcoming = false, storeIds = null } = {}) {
   const all = itemRecords(db, item.id)
+  // Home is the flyer board: only imported flyer prices (which always carry a
+  // validity window, the flyer week ending next Wednesday) make a deal. A
+  // hand-logged shelf price is a reference, not a deal, so it lives on the
+  // product page only — see `isManualRec` in src/lib/analysis.js (§10).
+  const flyer = all.filter((r) => r.source === 'flyer')
   let recs = includeExpired
-    ? all
-    : all.filter((r) => r.validUntil == null || r.validUntil >= now)
+    ? flyer
+    : flyer.filter((r) => r.validUntil == null || r.validUntil >= now)
   if (onlyUpcoming) recs = recs.filter((r) => isUpcomingRec(r, now))
   if (storeIds) recs = recs.filter((r) => storeIds.has(r.storeId))
   const pick = (list, normOf) => {

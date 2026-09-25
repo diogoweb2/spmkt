@@ -65,6 +65,39 @@ export function flyerInfo(rec) {
   return { text: valid ? `${tag} until ${d}` : `${tag} ended ${d}`, valid, url, upcoming }
 }
 
+// A price the user logged by hand: no flyer provenance, so no printed
+// validity window (photo-mode shelf prices count as manual too). Home only
+// ever shows flyer deals, so these live on the product page alone (§10).
+export const isManualRec = (rec) => rec?.source !== 'flyer'
+
+// A manual price stays current for a month from the day it was logged — a
+// shelf price older than that is no longer news, so it reads as expired.
+export const MANUAL_MS = 30 * 24 * 3600 * 1000
+
+// When a record stops being current: flyer records at their printed
+// validUntil, manual ones a month after they were logged.
+export function recExpiry(rec) {
+  if (!rec) return null
+  return isManualRec(rec) ? rec.ts + MANUAL_MS : (rec.validUntil ?? null)
+}
+
+export function isRecExpired(rec, now = Date.now()) {
+  const exp = recExpiry(rec)
+  return exp != null && exp < now
+}
+
+// Badge for a manual price, same shape as flyerInfo (never a link).
+export function manualInfo(rec) {
+  if (!rec || !isManualRec(rec)) return null
+  const exp = rec.ts + MANUAL_MS
+  const d = new Date(exp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const valid = Date.now() <= exp
+  return { text: valid ? `✍️ manual until ${d}` : `✍️ manual ended ${d}`, valid, url: null, upcoming: false }
+}
+
+// Whichever validity badge fits the record: flyer window or manual month.
+export const priceInfo = (rec) => flyerInfo(rec) ?? manualInfo(rec)
+
 export function variantRecords(db, itemId, key) {
   return itemRecords(db, itemId).filter((r) => variantKey(r) === key)
 }

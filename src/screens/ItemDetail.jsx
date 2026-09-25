@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { mergedMembers, unmergeName } from '../lib/merge'
 import {
   itemRecords, recordNorm, verdict, pricesByStore, itemAnnualQty, yearlySavings,
-  variantKey, variantLabel, flyerInfo, isComparable,
+  variantKey, variantLabel, priceInfo, isRecExpired, isComparable,
 } from '../lib/analysis'
 import { fmtMoney, fmtDisplay, fmtQty, fmtAnnual, annualSliderRange, displayUnitLabel, unitKind } from '../lib/units'
 import { effectivePrice } from '../lib/cashback'
@@ -27,7 +27,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const [compareSel, setCompareSel] = useState([])
   const [rvState, setRvState] = useState({})
   // History controls: cheapest-first by default so the best deals pop and
-  // expired flyer prices sink; expired rows are dimmed, or hidden entirely.
+  // expired prices sink; expired rows are dimmed, or hidden entirely.
   const [histSort, setHistSort] = useState('price') // 'price' | 'date'
   const [hideExpired, setHideExpired] = useState(false)
   // Filter the store list + history by brand/store text — one product often
@@ -120,7 +120,9 @@ export default function ItemDetail({ db, update, push, pop, view }) {
   const byStoreShown = byStore.filter((e) => matchRec(e.rec))
 
   const now = Date.now()
-  const isExpired = (r) => r.validUntil != null && r.validUntil < now
+  // Flyer prices expire on their printed date, manual ones a month after
+  // they were logged (§10) — both dim in History and hide behind "Hide expired".
+  const isExpired = (r) => isRecExpired(r, now)
   const histRecs = (hideExpired ? recs.filter((r) => !isExpired(r)) : [...recs]).filter(matchRec)
   if (histSort === 'price') {
     histRecs.sort((a, b) => {
@@ -217,7 +219,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                 ✏️
               </button>
               {(() => {
-                const fi = flyerInfo(latest)
+                const fi = priceInfo(latest)
                 return fi && (
                   <FlyerLink fi={fi} className={'badge ' + (fi.valid ? 'lvl-first' : 'lvl-ok')} style={{ marginLeft: 8, fontSize: 11, verticalAlign: 'middle' }} />
                 )
@@ -307,7 +309,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                           {selected ? '☑️ ' : rec.id === byStore[0].rec.id && byStore.length > 1 ? '🏆 ' : ''}{store.name}
                         </div>
                         {rec.origName && <div className="sub" style={{ fontStyle: 'italic' }}>“{rec.origName}”</div>}
-                        <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))}{rec.minQty >= 2 ? ` · 🛒 buy ${rec.minQty}+` : ''} · {new Date(rec.ts).toLocaleDateString()}{flyerInfo(rec) ? <> · <FlyerLink fi={flyerInfo(rec)} /></> : ''}</div>
+                        <div className="sub">{fmtQty(rec.qty, rec.unit)} for {fmtMoney(effectivePrice(db, rec))}{rec.minQty >= 2 ? ` · 🛒 buy ${rec.minQty}+` : ''} · {new Date(rec.ts).toLocaleDateString()}{priceInfo(rec) ? <> · <FlyerLink fi={priceInfo(rec)} /></> : ''}</div>
                       </div>
                       <div className="right title">{fmt(norm)}</div>
                       <span
@@ -473,7 +475,7 @@ export default function ItemDetail({ db, update, push, pop, view }) {
                         {store?.name ?? '?'} · {fmtQty(r.qty, r.unit)}{r.minQty >= 2 ? ` · 🛒 buy ${r.minQty}+` : ''} ✏️
                       </div>
                       {r.origName && <div className="sub" style={{ fontStyle: 'italic' }}>“{r.origName}”</div>}
-                      <div className="sub">{new Date(r.ts).toLocaleDateString()}{flyerInfo(r) ? <> · <FlyerLink fi={flyerInfo(r)} /></> : ''}</div>
+                      <div className="sub">{new Date(r.ts).toLocaleDateString()}{priceInfo(r) ? <> · <FlyerLink fi={priceInfo(r)} /></> : ''}</div>
                       {norm != null && (
                         <div className={'hist-bar ' + cls} style={{ width: `${Math.max(6, pct * 100)}%`, marginTop: 6 }} />
                       )}
