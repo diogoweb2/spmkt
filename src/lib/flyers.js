@@ -38,10 +38,15 @@ export function storeUrl(db, store) {
 // flyerImageUrls() in scripts/flyers/shared.mjs — same dedupe on the URL
 // without its ?v= cachebuster (each page is linked both bare and versioned,
 // and keeping both shifts every page number by one). Page N is urls[N - 1].
+//
+// The filename pattern is matched loosely on purpose: flyers-on-line changed
+// it mid-flight (2-digit `_01.jpg` -> 3-digit `_001.jpg`, and .webp instead of
+// .jpg on some stores), which matched nothing and made every store's upcoming
+// flyer report "no flyer pages found" while the current week still worked.
 export function flyerImageUrls(html) {
   const seen = new Set()
   const urls = []
-  for (const m of html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)) {
+  for (const m of html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2,3}\.(?:jpe?g|webp|png)[^"' ]*/g)) {
     const key = m[0].split('?')[0]
     if (seen.has(key)) continue
     seen.add(key)

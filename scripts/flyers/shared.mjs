@@ -48,9 +48,12 @@ export function flyerImageUrls(html) {
   // Dedupe on the URL WITHOUT its ?v=<cachebuster>: each page is linked both
   // bare and versioned, and keeping both shifted every page number by one
   // (page 1 twice, and every flyerPage pointing at the previous page).
+  // The filename pattern is matched loosely on purpose: flyers-on-line changed
+  // it mid-flight (2-digit `_01.jpg` -> 3-digit `_001.jpg`, and .webp instead
+  // of .jpg on some stores), which matched nothing at all.
   const seen = new Set()
   const urls = []
-  for (const m of html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2}\.jpg[^"' ]*/g)) {
+  for (const m of html.matchAll(/https:\/\/www\.flyers-on-line\.com\/data\/promotions\/\d+\/[^"' ]+_\d{2,3}\.(?:jpe?g|webp|png)[^"' ]*/g)) {
     const key = m[0].split('?')[0]
     if (seen.has(key)) continue
     seen.add(key)
@@ -89,9 +92,14 @@ const BUCKET = 'spmkt-cc6fd.firebasestorage.app'
 export async function uploadReviewImage(env, localPath, id) {
   await openFamilyDoc(env) // ensures the admin app + familyUid are initialized
   if (!familyUid) return null
-  const dest = `photos/${familyUid}/${id}.jpg`
+  // Keep the local file's own extension/type: flyers-on-line serves some
+  // stores' pages as .webp, and a webp uploaded as image/jpeg can fail to
+  // render in the Review card.
+  const ext = (localPath.match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase()
+  const contentType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+  const dest = `photos/${familyUid}/${id}.${ext}`
   const { getStorage } = await import('firebase-admin/storage')
-  await getStorage().bucket(BUCKET).upload(localPath, { destination: dest, metadata: { contentType: 'image/jpeg' } })
+  await getStorage().bucket(BUCKET).upload(localPath, { destination: dest, metadata: { contentType } })
   return dest
 }
 

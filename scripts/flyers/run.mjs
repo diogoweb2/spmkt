@@ -105,7 +105,8 @@ async function downloadPages(store, dir, url) {
   if (!res.ok) throw new Error(`fetch ${url}: HTTP ${res.status}`)
   const html = await res.text()
   const validUntil = parseValidUntil(html)
-  // Page images are /data/promotions/<id>/<slug>_NN.jpg. The suffix is NOT the
+  // Page images are /data/promotions/<id>/<slug>_NN.jpg (newer flyers use a
+  // 3-digit _NNN and sometimes .webp). The suffix is NOT the
   // display order — Superstore's first page is _07, with _01.._06 being ad
   // inserts. The site renders pages in document order, so we keep the URLs in
   // the order they appear in the HTML (deduped: each page is referenced twice).
@@ -124,7 +125,10 @@ async function downloadPages(store, dir, url) {
     try {
       const imgRes = await fetch(imgUrl, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: url } })
       if (!imgRes.ok) throw new Error(`HTTP ${imgRes.status}`)
-      const file = join(dir, `${store.name.toLowerCase().replace(/\W+/g, '-')}-page${String(i + 1).padStart(2, '0')}.jpg`)
+      // Keep the source's extension: flyers-on-line serves some stores' pages
+      // as .webp, and writing webp bytes into a .jpg confuses the vision read.
+      const ext = (imgUrl.split('?')[0].match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase()
+      const file = join(dir, `${store.name.toLowerCase().replace(/\W+/g, '-')}-page${String(i + 1).padStart(2, '0')}.${ext}`)
       writeFileSync(file, Buffer.from(await imgRes.arrayBuffer()))
       files.push(file)
     } catch (err) {
@@ -153,7 +157,7 @@ COMPLETENESS — before you output, go back over EACH page image block by block 
 
 Rules:
 - file: the FULL PATH of the image file this deal was read from, copied EXACTLY from the list above. This is how the user is shown the right ad page — a wrong path shows them the wrong page, so copy the path of the file you were actually looking at when you saw this deal. Never guess it, never reuse the previous element's path out of habit.
-- page: the NN number in that same file's name ("...-pageNN.jpg" -> page NN). It must match "file". If a product appears on several pages, use the first.
+- page: the NN number in that same file's name ("...-pageNN.jpg" or "...-pageNN.webp" -> page NN). It must match "file". If a product appears on several pages, use the first.
 - name: clean generic product name with brand if shown (e.g. "Chicken Drumsticks", "Coca-Cola 12-pack"). No sizes/prices in the name.
 - origName: the product name exactly as printed on the flyer (brand, variety, wording — still no sizes/prices). This is what the user reads on the shelf, so keep it faithful even when "name" is a generic/db name that groups it with similar products.
 - price is in dollars for the stated qty+unit. "$2.99/lb" -> price 2.99, qty 1, unit "lb". "2 for $5" -> price 2.50, qty 1, unit "un", minQty 2. A 1.89 L juice at $3.99 -> price 3.99, qty 1.89, unit "L". If sold by weight/volume use that unit; packaged goods with no usable size -> unit "un", qty 1.
@@ -238,9 +242,9 @@ function extractProducts(imgPaths, storeName, existingNames, ignoredNames, white
     // and a wrong page showed the user a useless image. A deal whose file/page
     // isn't one of THIS batch's pages gets page null (no image) rather than a
     // confidently wrong one; a single-page batch can only be that page.
-    const pagesInBatch = new Map() // "-pageNN.jpg" -> NN, for this batch only
+    const pagesInBatch = new Map() // "-pageNN.<ext>" -> NN, for this batch only
     for (const f of batch) {
-      const m = f.match(/-page(\d+)\.jpg$/)
+      const m = f.match(/-page(\d+)\.[a-z0-9]+$/i)
       if (m) pagesInBatch.set(f, Number(m[1]))
     }
     const only = pagesInBatch.size === 1 ? [...pagesInBatch.values()][0] : null
@@ -542,10 +546,10 @@ for (const store of storesToRun) {
       console.log(JSON.stringify(products, null, 2))
     } else {
       // page number -> local image file, so review-bound products can attach
-      // the flyer page (filenames end "-pageNN.jpg", NN = the flyer page).
+      // the flyer page (filenames end "-pageNN.<ext>", NN = the flyer page).
       const pageFiles = new Map()
       for (const f of dl.files) {
-        const m = f.match(/-page(\d+)\.jpg$/)
+        const m = f.match(/-page(\d+)\.[a-z0-9]+$/i)
         if (m) pageFiles.set(Number(m[1]), f)
       }
       const added = await insertProducts(products, store.name, env, dl.validUntil, chosen.url, dl.pageCount, chosen.upcoming, pageFiles)

@@ -51,7 +51,8 @@ async function fetchPageImage(flyerUrl, flyerPage, dir) {
   if (!imgUrl) throw new Error(`page ${flyerPage} not in flyer (${urls.length} pages)`)
   const imgRes = await fetch(imgUrl, { headers: { 'User-Agent': 'Mozilla/5.0', Referer: flyerUrl } })
   if (!imgRes.ok) throw new Error(`page image HTTP ${imgRes.status}`)
-  const file = join(dir, `page-${flyerPage}-${uid('i')}.jpg`)
+  const ext = (imgUrl.split('?')[0].match(/\.([a-z0-9]+)$/i)?.[1] || 'jpg').toLowerCase()
+  const file = join(dir, `page-${flyerPage}-${uid('i')}.${ext}`)
   writeFileSync(file, Buffer.from(await imgRes.arrayBuffer()))
   return file
 }
